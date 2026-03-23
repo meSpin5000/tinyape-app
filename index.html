@@ -352,8 +352,26 @@ async function loadAndShowApp() {
   document.getElementById('loginPage').style.display = 'none';
   document.getElementById('loadingPage').style.display = 'flex';
 
+  await refreshFromSupabase();
+
+  document.getElementById('loadingPage').style.display = 'none';
+  document.getElementById('appPage').style.display = 'block';
+
+  // Init the app
+  setDate();
+  render();
+  renderHallOfFame();
+
+  // Welcome toast
+  if (store.tasks.length === 0 && store.killedTasks.length === 0) {
+    setTimeout(() => showToast('Welcome to TinyApe! Add your first task to get started.'), 500);
+  }
+}
+
+// ─── REFRESH DATA FROM SUPABASE ───
+// Called on initial load AND when the tab regains focus (cross-device sync)
+async function refreshFromSupabase() {
   try {
-    // Load data from Supabase
     const data = await TinyApeDB.loadAllData();
 
     if (data) {
@@ -377,7 +395,7 @@ async function loadAndShowApp() {
         });
       }
 
-      // Set nextId higher than any existing task id (for respawns before sync catches up)
+      // Set nextId higher than any existing task id
       const maxId = store.tasks.reduce((max, t) => {
         const n = typeof t.id === 'number' ? t.id : 0;
         return n > max ? n : max;
@@ -390,20 +408,18 @@ async function loadAndShowApp() {
   } catch (err) {
     console.error('Error loading data:', err);
   }
-
-  document.getElementById('loadingPage').style.display = 'none';
-  document.getElementById('appPage').style.display = 'block';
-
-  // Init the app
-  setDate();
-  render();
-  renderHallOfFame();
-
-  // Welcome toast
-  if (store.tasks.length === 0 && store.killedTasks.length === 0) {
-    setTimeout(() => showToast('Welcome to TinyApe! Add your first task to get started.'), 500);
-  }
 }
+
+// ─── CROSS-DEVICE SYNC ───
+// When the user switches back to this tab, re-fetch everything from Supabase
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && document.getElementById('appPage').style.display !== 'none') {
+    await refreshFromSupabase();
+    setDate();
+    render();
+    renderHallOfFame();
+  }
+});
 
 boot();
 </script>
