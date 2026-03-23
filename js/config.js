@@ -1,0 +1,3 @@
+// TinyApe Supabase Configuration
+const SUPABASE_URL = 'https://lbgnayhxaylzwfluwqht.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxiZ25heWh4YXlsendmbHV3cWh0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyOTQ5NTIsImV4cCI6MjA4OTg3MDk1Mn0.H5gG1Jk8K4h43y-igpK55-RUSGbODOcaQLVCWD4mpOE';

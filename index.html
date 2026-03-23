@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TinyApe — Swing Through the Day</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  /* ─── LOGIN PAGE ─── */
+  .login-page {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: var(--bg);
+    font-family: 'Inter', sans-serif;
+  }
+  .login-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 40px 36px;
+    max-width: 380px;
+    width: 100%;
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+  }
+  .login-logo {
+    font-family: 'Bagel Fat One', cursive;
+    font-size: 36px;
+    color: var(--accent-red);
+    margin-bottom: 4px;
+  }
+  .login-tagline {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 32px;
+    font-style: italic;
+  }
+  .login-label {
+    display: block;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+  .login-input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-secondary);
+    color: var(--text);
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+  }
+  .login-input:focus { border-color: var(--accent-red); }
+  .login-btn {
+    width: 100%;
+    padding: 11px;
+    margin-top: 16px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent-red);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .login-btn:hover { opacity: 0.9; }
+  .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .login-message {
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    min-height: 20px;
+  }
+  .login-message.error { color: var(--accent-red); }
+  .login-message.success { color: var(--accent-green); }
+  .login-signout {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    z-index: 1000;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+  }
+  .login-signout:hover { opacity: 1; }
+  .app-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Inter', sans-serif;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+</style>
+</head>
+<body data-theme="light">
+
+<!-- ─── LOGIN PAGE ─── -->
+<div id="loginPage" class="login-page">
+  <div class="login-card">
+    <div class="login-logo">TinyApe</div>
+    <div class="login-tagline">Swing Through the Day</div>
+    <label class="login-label" for="loginEmail">Email</label>
+    <input type="email" class="login-input" id="loginEmail" placeholder="you@example.com" autocomplete="email">
+    <button class="login-btn" id="loginBtn" onclick="handleLogin()">Send Magic Link</button>
+    <div class="login-message" id="loginMessage"></div>
+  </div>
+</div>
+
+<!-- ─── LOADING STATE ─── -->
+<div id="loadingPage" class="app-loading" style="display:none;">
+  Loading your tasks...
+</div>
+
+<!-- ─── MAIN APP (hidden until authenticated) ─── -->
+<div id="appPage" style="display:none;">
+
+<div class="hall-of-fame" id="hallOfFame"></div>
+<div class="hof-modal-overlay" id="hofModalOverlay" onclick="closeHofModal()"></div>
+<div class="hof-modal" id="hofModal"><button class="hof-modal-close" onclick="closeHofModal()">✕</button><div id="hofModalContent"></div></div>
+
+<header style="position:sticky;top:0;z-index:100;">
+  <div class="logo">TinyApe</div>
+  <canvas class="pixel-ape" id="pixelApe" width="24" height="24"></canvas>
+  <div class="header-right">
+    <span class="date-display" id="dateDisplay"></span>
+    <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+      <svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <svg class="moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+  <!-- TODAY'S LIST -->
+  <div class="section-header" style="border-bottom:none; padding-bottom:0;">
+    <div class="daily-counter-wrap">
+      <div class="daily-counter" id="dailyCounter">0</div>
+      <div>
+        <h2 class="section-title">Today</h2>
+        <span class="daily-counter-label">completed today</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button class="sort-date-btn" id="sortDateBtn" onclick="sortTodayByDate()" title="Sort by due date">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+      </button>
+      <span class="section-count" id="todayCount"></span>
+    </div>
+  </div>
+  <div class="today-list" id="todayList"></div>
+
+  <!-- ADD TASK -->
+  <div class="add-task-box">
+    <div class="add-task-row">
+      <input type="text" class="add-task-input" id="addTaskInput" placeholder="Add a task…" />
+      <button class="add-task-btn" id="addTaskBtn">Add</button>
+    </div>
+    <div class="add-task-notes-wrap" id="addTaskNotesWrap">
+      <textarea class="add-task-notes" id="addTaskNotes" placeholder="Add notes…"></textarea>
+      <div style="display:flex;align-items:center;gap:6px;padding-top:6px;">
+        <button class="add-pill" id="addTaskListBtn" onclick="toggleAddTaskList()" style="height:24px;min-width:auto;font-size:11px;padding:0 10px;">☐ List</button>
+        <span style="font-size:10px;color:rgba(255,255,255,0.45);font-style:italic;">tasks default to 1 week out</span>
+      </div>
+    </div>
+    <div class="add-task-options" id="addTaskOptions"></div>
+    <input type="date" id="hiddenDatePicker" onchange="handleDatePick(this.value)" />
+  </div>
+
+  <!-- PROJECTS -->
+  <div id="projectsSection" style="display:none;">
+    <div class="section-header" style="margin-top:28px;">
+      <h2 class="section-title">Projects</h2>
+      <span class="section-count" id="projectsCount"></span>
+    </div>
+    <div id="projectsList"></div>
+  </div>
+
+  <!-- ON DECK -->
+  <div class="section-header">
+    <h2 class="section-title">On Deck <span style="font-size:10px; color:var(--text-muted); font-weight:400; font-style:italic; font-family:Inter,sans-serif; margin-left:4px; vertical-align:baseline;">[click to vote up]</span></h2>
+    <span class="section-count" id="backlogCount"></span>
+  </div>
+  <div class="backlog-list" id="backlogList"></div>
+
+  <!-- PROJECTS (hidden, data layer preserved) -->
+  <div style="display:none;">
+    <div class="section-header" style="margin-top:48px;">
+      <h2 class="section-title">Projects</h2>
+    </div>
+    <div id="projectList"></div>
+  </div>
+
+  <!-- COMPLETED -->
+  <div class="completed-section" id="completedSection" style="display:none;">
+    <div class="completed-header" onclick="toggleCompleted()">
+      <span class="completed-header-left">
+        <h2 class="section-title">Completed <span id="completedAllTime" style="font-size:10px; color:var(--text-muted); font-weight:400; font-style:italic; font-family:Inter,sans-serif; margin-left:4px; vertical-align:baseline;"></span></h2>
+      </span>
+      <span class="completed-toggle"><span class="arrow">▾</span></span>
+    </div>
+    <div class="completed-items" id="completedList"></div>
+  </div>
+
+  <!-- KILLED -->
+  <div class="completed-section" id="killedSection" style="display:none;">
+    <div class="completed-header" onclick="toggleKilled()">
+      <span class="completed-header-left">
+        <h2 class="section-title">Killed</h2>
+      </span>
+      <span class="completed-toggle"><span class="arrow">▾</span></span>
+    </div>
+    <div class="completed-items" id="killedList"></div>
+  </div>
+
+  <!-- CATEGORIES (hidden) -->
+  <div style="display:none;" id="categoryAccordion"></div>
+
+  <footer style="text-align:center;padding:40px 0 0;font-size:10px;color:var(--text-muted);opacity:0.5;font-family:Inter,sans-serif;">
+    &copy; 2026 TinyApe &middot; Remember, tasking should be fun.
+  </footer>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<!-- DRAWER -->
+<div class="drawer-tab" id="drawerTab" onclick="toggleDrawer()">
+  <span style="display:flex;align-items:center;gap:4px;">Drawer</span>
+  <span class="drawer-tab-badge" id="drawerBadge"></span>
+</div>
+<div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer()"></div>
+<div class="drawer-panel" id="drawerPanel">
+  <div class="drawer-header">
+    <h2 class="section-title">Drawer</h2>
+    <button class="drawer-close" onclick="toggleDrawer()">✕</button>
+  </div>
+  <div style="margin-bottom:14px;">
+    <div style="display:flex;gap:6px;">
+      <input type="text" id="drawerAddInput" placeholder="Add to drawer…" style="flex:1;padding:7px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);font-size:13px;font-family:Inter,sans-serif;color:var(--text);outline:none;" />
+      <button onclick="addTaskFromDrawer()" style="padding:5px 12px;border-radius:4px;border:1px solid var(--border);background:var(--accent-red);color:#fff;font-size:12px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;">Add</button>
+    </div>
+    <div id="drawerAddNotesWrap" style="max-height:0;overflow:hidden;transition:max-height 0.3s ease,padding 0.3s ease;padding-top:0;">
+      <textarea id="drawerAddNotes" placeholder="Add notes…" style="width:100%;margin-top:8px;padding:7px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);font-size:12px;font-family:Inter,sans-serif;color:var(--text);outline:none;resize:none;height:50px;"></textarea>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+        <button class="drawer-cat-pill" id="drawerAddListBtn" onclick="toggleDrawerAddList()" style="font-size:10px;padding:2px 8px;">☐ List</button>
+        <button class="drawer-cat-pill" id="drawerAddCatBtn" onclick="cycleDrawerAddCategory()" style="font-size:10px;padding:2px 8px;">+ category</button>
+      </div>
+    </div>
+  </div>
+  <div class="drawer-cat-pills" id="drawerCatPills"></div>
+  <div id="drawerContent"></div>
+</div>
+<div class="unlock-banner" id="unlockBanner"><span class="bolt">&#9889;</span> <span id="unlockText"></span></div>
+<div class="creature-tooltip" id="creatureTooltip"></div>
+
+<button class="login-signout" onclick="handleSignOut()">Sign out</button>
+
+</div><!-- /appPage -->
+
+<!-- ─── SCRIPTS ─── -->
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/db.js"></script>
+<script src="js/app.js"></script>
+<script src="js/sync.js"></script>
+
+<script>
+// ─── AUTH FLOW ───
+async function handleLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const msg = document.getElementById('loginMessage');
+  const btn = document.getElementById('loginBtn');
+
+  if (!email) {
+    msg.textContent = 'Please enter your email';
+    msg.className = 'login-message error';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  msg.textContent = '';
+
+  const result = await TinyApeAuth.signIn(email);
+
+  if (result.error) {
+    msg.textContent = result.error.message || 'Something went wrong';
+    msg.className = 'login-message error';
+    btn.disabled = false;
+    btn.textContent = 'Send Magic Link';
+  } else {
+    msg.textContent = 'Check your email for a magic link!';
+    msg.className = 'login-message success';
+    btn.textContent = 'Link sent!';
+  }
+}
+
+async function handleSignOut() {
+  await TinyApeAuth.signOut();
+  document.getElementById('appPage').style.display = 'none';
+  document.getElementById('loginPage').style.display = 'flex';
+}
+
+// Enter key on login input
+document.getElementById('loginEmail').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') handleLogin();
+});
+
+// ─── BOOT SEQUENCE ───
+async function boot() {
+  const user = await TinyApeAuth.initAuth();
+
+  if (user) {
+    await loadAndShowApp();
+  } else {
+    document.getElementById('loginPage').style.display = 'flex';
+  }
+
+  // Listen for auth changes (magic link callback)
+  TinyApeAuth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session) {
+      await loadAndShowApp();
+    } else if (event === 'SIGNED_OUT') {
+      document.getElementById('appPage').style.display = 'none';
+      document.getElementById('loginPage').style.display = 'flex';
+    }
+  });
+}
+
+async function loadAndShowApp() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('loadingPage').style.display = 'flex';
+
+  try {
+    // Load data from Supabase
+    const data = await TinyApeDB.loadAllData();
+
+    if (data) {
+      // Populate the in-memory store
+      store.tasks = data.tasks || [];
+      store.killedTasks = data.killedTasks || [];
+
+      // Convert drawerCategories array to object
+      if (data.drawerCategories && Array.isArray(data.drawerCategories)) {
+        store.drawerCategories = {};
+        data.drawerCategories.forEach(cat => {
+          store.drawerCategories[cat.key] = { label: cat.label, color: cat.color };
+        });
+      }
+
+      // Load completion log
+      if (data.completionLog) {
+        completionLog.length = 0;
+        data.completionLog.forEach(e => {
+          completionLog.push({ ts: e.createdAt || e.created_at });
+        });
+      }
+
+      // Set nextId higher than any existing task id (for respawns before sync catches up)
+      const maxId = store.tasks.reduce((max, t) => {
+        const n = typeof t.id === 'number' ? t.id : 0;
+        return n > max ? n : max;
+      }, 0);
+      store.nextId = maxId + 1;
+
+      // Surface drawer tasks that are now within 14 days
+      api.surfaceDrawerTasks();
+    }
+  } catch (err) {
+    console.error('Error loading data:', err);
+  }
+
+  document.getElementById('loadingPage').style.display = 'none';
+  document.getElementById('appPage').style.display = 'block';
+
+  // Init the app
+  setDate();
+  render();
+  renderHallOfFame();
+
+  // Welcome toast
+  if (store.tasks.length === 0 && store.killedTasks.length === 0) {
+    setTimeout(() => showToast('Welcome to TinyApe! Add your first task to get started.'), 500);
+  }
+}
+
+boot();
+</script>
+
+</body>
+</html>
