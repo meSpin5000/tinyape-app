@@ -71,6 +71,7 @@ const api = {
       drawer: !!drawer,
       drawerCategory: null,
       isProject: false,
+      trackTime: false,
       timeSessions: []
     };
     store.tasks.push(task);
@@ -388,7 +389,7 @@ function todayItemHtml(t) {
       <span class="today-number">${t.todayOrder}</span>
       <div class="checkbox" onclick="handleToggleDone(${t.id})"></div>
       <div class="task-content">
-        <div class="task-title task-title-clickable" onclick="openNotesSidebar(${t.id})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : ''}${recurInline}</div>
+        <div class="task-title task-title-clickable" onclick="openNotesSidebar(${t.id})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</div>
       </div>
       ${dueHtml}
       <button class="push-btn" onclick="openPushPopover(${t.id}, this)" title="Push out">⟩</button>
@@ -538,7 +539,7 @@ function renderBacklog() {
         <button class="vote-btn" onclick="handleVoteUp(${t.id})" title="Add to today">
           ${plusSvg}
         </button>
-        <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${t.id})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : ''}${recurInline}</span>
+        <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${t.id})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</span>
         ${dateBtn}
         <div class="backlog-actions">
           <button class="action-box" onclick="openPushPopover(${t.id}, this)" title="Push out">⟩</button>
@@ -775,6 +776,23 @@ function toggleKilled() {
 let addModalContext = 'ondeck';  // 'today', 'ondeck', 'project', 'drawer'
 let addTaskListMode = false;
 
+// ─── Modal notes helpers (contenteditable div) ───
+function getModalNotesText() {
+  const el = document.getElementById('addTaskNotes');
+  return notesHtmlToText(el);
+}
+function setModalNotesText(text) {
+  const el = document.getElementById('addTaskNotes');
+  el.innerHTML = notesTextToHtml(text);
+}
+function clearModalNotes() {
+  const el = document.getElementById('addTaskNotes');
+  el.innerHTML = '';
+}
+function setModalNotesPlaceholder(text) {
+  document.getElementById('addTaskNotes').setAttribute('data-placeholder', text);
+}
+
 function openAddModal(context) {
   addModalContext = context || 'ondeck';
   store.addTaskAsProject = (context === 'project');
@@ -791,24 +809,29 @@ function openAddModal(context) {
   const notes = document.getElementById('addTaskNotes');
 
   // Context-aware title and placeholder
+  const subtitleEl = document.getElementById('addModalSubtitle');
   if (context === 'project') {
     titleEl.textContent = 'Add a project';
+    subtitleEl.textContent = 'For multi-step tasks with progress and time tracking';
+    subtitleEl.style.display = '';
     input.placeholder = 'Project name…';
-    notes.placeholder = 'Break it into steps…';
+    setModalNotesPlaceholder('Break it into steps…');
     notesWrap.classList.add('open');  // auto-expand notes for projects
-    notes.value = '[ ] ';
+    setModalNotesText('[ ] ');
   } else if (context === 'today') {
     titleEl.textContent = 'Add to Today';
+    subtitleEl.style.display = 'none';
     input.placeholder = 'What needs to be done?';
-    notes.placeholder = 'Add notes…';
+    setModalNotesPlaceholder('Add notes…');
     notesWrap.classList.remove('open');
-    notes.value = '';
+    clearModalNotes();
   } else {
     titleEl.textContent = 'Add a task';
+    subtitleEl.style.display = 'none';
     input.placeholder = 'What needs to be done?';
-    notes.placeholder = 'Add notes…';
+    setModalNotesPlaceholder('Add notes…');
     notesWrap.classList.remove('open');
-    notes.value = '';
+    clearModalNotes();
   }
 
   renderAddModalPills();
@@ -824,7 +847,7 @@ function closeAddModal() {
   // Reset state
   const input = document.getElementById('addTaskInput');
   input.value = '';
-  document.getElementById('addTaskNotes').value = '';
+  clearModalNotes();
   document.getElementById('addModalNotesWrap').classList.remove('open');
   store.addTaskAsProject = false;
   store.selectedDueDate = null;
@@ -883,21 +906,25 @@ function toggleAddAsProject() {
   const notesWrap = document.getElementById('addModalNotesWrap');
   const notes = document.getElementById('addTaskNotes');
 
+  const subtitleEl = document.getElementById('addModalSubtitle');
   if (store.addTaskAsProject) {
     titleEl.textContent = 'Add a project';
+    subtitleEl.textContent = 'For multi-step tasks with progress and time tracking';
+    subtitleEl.style.display = '';
     input.placeholder = 'Project name…';
     if (!notesWrap.classList.contains('open')) {
       notesWrap.classList.add('open');
-      if (!notes.value.trim()) {
-        notes.value = '[ ] ';
+      if (!getModalNotesText().trim()) {
+        setModalNotesText('[ ] ');
         addTaskListMode = true;
       }
-      notes.placeholder = 'Break it into steps…';
+      setModalNotesPlaceholder('Break it into steps…');
     }
   } else {
     titleEl.textContent = addModalContext === 'today' ? 'Add to Today' : 'Add a task';
+    subtitleEl.style.display = 'none';
     input.placeholder = 'What needs to be done?';
-    notes.placeholder = 'Add notes…';
+    setModalNotesPlaceholder('Add notes…');
   }
   renderAddModalPills();
   renderAddModalActions();
@@ -905,25 +932,27 @@ function toggleAddAsProject() {
 
 function toggleModalListMode() {
   addTaskListMode = !addTaskListMode;
-  const ta = document.getElementById('addTaskNotes');
+  const el = document.getElementById('addTaskNotes');
   const notesWrap = document.getElementById('addModalNotesWrap');
 
   if (addTaskListMode) {
     notesWrap.classList.add('open');
-    const lines = ta.value.split('\n');
-    ta.value = lines.map(l => {
+    const currentText = getModalNotesText();
+    const lines = currentText.split('\n');
+    const newText = lines.map(l => {
       const trimmed = l.trim();
       if (!trimmed) return '';
       if (trimmed.startsWith('[ ] ') || trimmed.startsWith('[x] ')) return l;
       return '[ ] ' + trimmed;
     }).join('\n');
-    if (!ta.value.trim()) ta.value = '[ ] ';
-    ta.focus();
-    ta.selectionStart = ta.selectionEnd = ta.value.length;
+    setModalNotesText(newText.trim() || '[ ] ');
+    el.focus();
   } else {
-    const lines = ta.value.split('\n');
-    ta.value = lines.map(l => l.replace(/^\[[ x]\] /, '')).join('\n');
-    ta.focus();
+    const currentText = getModalNotesText();
+    const lines = currentText.split('\n');
+    const newText = lines.map(l => l.replace(/^\[[ x]\] /, '')).join('\n');
+    setModalNotesText(newText);
+    el.focus();
   }
   renderAddModalPills();
 }
@@ -933,7 +962,7 @@ function addModalSubmit(destination) {
   const title = input.value.trim();
   if (!title) { input.focus(); return; }
 
-  const notes = document.getElementById('addTaskNotes').value.trim();
+  const notes = getModalNotesText().trim();
   const isDrawer = (destination === 'drawer');
   const dueDate = store.selectedDueDate || (isDrawer ? null : getDefaultDueDate());
 
@@ -986,28 +1015,46 @@ document.getElementById('addTaskInput').addEventListener('input', (e) => {
   }
 });
 
-// Auto-add [ ] on Enter in list mode within notes
+// Auto-add checkbox on Enter in list mode within notes (contenteditable)
 document.getElementById('addTaskNotes').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && addTaskListMode) {
     e.preventDefault();
-    const ta = e.target;
-    const pos = ta.selectionStart;
-    const before = ta.value.substring(0, pos);
-    const after = ta.value.substring(ta.selectionEnd);
-    const lastLine = before.split('\n').pop();
-    if (lastLine.trim() === '[ ]') {
-      const newBefore = before.substring(0, before.lastIndexOf('[ ]'));
-      ta.value = newBefore + after;
-      ta.selectionStart = ta.selectionEnd = newBefore.length;
-      addTaskListMode = false;
-      renderAddModalPills();
-      return;
+    const el = e.target.closest('#addTaskNotes') || document.getElementById('addTaskNotes');
+    // Check if cursor is in an empty checklist line — if so, exit list mode
+    const sel = window.getSelection();
+    const focusNode = sel.focusNode;
+    const line = focusNode ? focusNode.closest ? focusNode.closest('.notes-line') : focusNode.parentElement.closest('.notes-line') : null;
+    if (line) {
+      const textEl = line.querySelector('.notes-line-text');
+      if (textEl && textEl.textContent.replace(/\u200B/g, '').trim() === '') {
+        // Empty checklist line — remove it and exit list mode
+        line.remove();
+        addTaskListMode = false;
+        renderAddModalPills();
+        return;
+      }
     }
-    ta.value = before + '\n[ ] ' + after;
-    ta.selectionStart = ta.selectionEnd = pos + 5;
+    // Insert a new checkbox line
+    const newLine = document.createElement('div');
+    newLine.className = 'notes-line';
+    newLine.innerHTML = '<input type="checkbox" onclick="handleInlineCheck(this)"><span class="notes-line-text">\u200B</span>';
+    // Insert after current line or at end
+    if (line && line.nextSibling) {
+      el.insertBefore(newLine, line.nextSibling);
+    } else {
+      el.appendChild(newLine);
+    }
+    // Place cursor in the new line's text span
+    const newText = newLine.querySelector('.notes-line-text');
+    const range = document.createRange();
+    range.setStart(newText, 0);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
   }
   if (e.key === 'Escape') closeAddModal();
 });
+
 
 // Close modal on Escape anywhere
 document.addEventListener('keydown', (e) => {
@@ -1017,9 +1064,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 function getAndClearAddNotes() {
-  const el = document.getElementById('addTaskNotes');
-  const notes = el.value.trim();
-  el.value = '';
+  const notes = getModalNotesText().trim();
+  clearModalNotes();
   document.getElementById('addModalNotesWrap').classList.remove('open');
   addTaskListMode = false;
   return notes;
@@ -1459,7 +1505,7 @@ function renderDrawer() {
     const notesIcon = t.notes ? '<span class="notes-indicator">📄</span>' : '';
 
     return `<div class="drawer-item" data-id="${t.id}">
-      <span class="drawer-item-title" onclick="openNotesSidebar(${t.id})" title="Click to open">${t.title}${notesIcon}${t.isProject ? '<span class="project-indicator">⏱</span>' : ''}${recurIcon}</span>
+      <span class="drawer-item-title" onclick="openNotesSidebar(${t.id})" title="Click to open">${t.title}${notesIcon}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurIcon}</span>
       ${dateMeta}
       <div class="drawer-item-actions">
         <button onclick="handleDrawerMoveToOnDeck(${t.id})" title="Move to On Deck">↑</button>
@@ -2120,21 +2166,18 @@ function openNotesSidebar(id, anchorEl) {
   const hasChecklist = task.notes && /^\[ \] |^\[x\] /m.test(task.notes);
   pillsHtml += `<span class="notes-card-pill${hasChecklist ? ' active' : ''}" onclick="toggleChecklistLines(${id})" title="Add checklist">☐ List</span>`;
 
-  // Category dot
-  const taskCat = task.drawerCategory && store.drawerCategories[task.drawerCategory] ? store.drawerCategories[task.drawerCategory] : null;
-  const catDotColor = taskCat ? taskCat.color : 'var(--border)';
-  const catDotLabel = taskCat ? taskCat.label : '';
-  pillsHtml += `<span class="notes-card-pill" onclick="openCardCategoryPicker(${id}, this)" title="${catDotLabel || 'Set category'}" style="gap:4px;">
-    <span style="width:8px;height:8px;border-radius:50%;background:${catDotColor};display:inline-block;${taskCat ? '' : 'opacity:0.4;'}"></span>${catDotLabel || 'Cat'}
-  </span>`;
-
   // Project pill
   pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${id})" title="Toggle project mode">⏱ Project</span>`;
 
+  // Track pill — available on any task
+  const hasTime = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
+  pillsHtml += `<span class="notes-card-pill${hasTime ? ' active' : ''}" onclick="toggleTimeTracking(${id})" title="Track time">◷ Track</span>`;
+
   // Build progress bar (only for projects with checklist items)
   const progressHtml = renderProgressBarHtml(task);
-  // Build time section (only for projects)
-  const timeHtml = task.isProject ? renderTimeSectionHtml(task) : '';
+  // Build time section (for projects OR any task with time tracking enabled)
+  const showTime = task.isProject || task.trackTime || (task.timeSessions && task.timeSessions.length > 0);
+  const timeHtml = showTime ? renderTimeSectionHtml(task) : '';
 
   card.innerHTML = `
     <div class="notes-card-header">
@@ -2151,7 +2194,7 @@ function openNotesSidebar(id, anchorEl) {
   // Position card near the task row
   if (anchorEl) {
     const rect = anchorEl.getBoundingClientRect();
-    const cardWidth = 340;
+    const cardWidth = 380;
 
     // Horizontal: center on the task row, but keep within viewport
     let left = rect.left + (rect.width / 2) - (cardWidth / 2);
@@ -2247,16 +2290,12 @@ function refreshSidebarMeta() {
   const hasChecklist2 = task.notes && /^\[ \] |^\[x\] /m.test(task.notes);
   pillsHtml += `<span class="notes-card-pill${hasChecklist2 ? ' active' : ''}" onclick="toggleChecklistLines(${id})" title="Add checklist">☐ List</span>`;
 
-  // Category dot
-  const taskCat2 = task.drawerCategory && store.drawerCategories[task.drawerCategory] ? store.drawerCategories[task.drawerCategory] : null;
-  const catDotColor2 = taskCat2 ? taskCat2.color : 'var(--border)';
-  const catDotLabel2 = taskCat2 ? taskCat2.label : '';
-  pillsHtml += `<span class="notes-card-pill" onclick="openCardCategoryPicker(${id}, this)" title="${catDotLabel2 || 'Set category'}" style="gap:4px;">
-    <span style="width:8px;height:8px;border-radius:50%;background:${catDotColor2};display:inline-block;${taskCat2 ? '' : 'opacity:0.4;'}"></span>${catDotLabel2 || 'Cat'}
-  </span>`;
-
   // Project pill
   pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${id})" title="Toggle project mode">⏱ Project</span>`;
+
+  // Track pill
+  const hasTime2 = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
+  pillsHtml += `<span class="notes-card-pill${hasTime2 ? ' active' : ''}" onclick="toggleTimeTracking(${id})" title="Track time">◷ Track</span>`;
 
   const pillsContainer = notesCardEl.querySelector('.notes-card-pills');
   if (pillsContainer) pillsContainer.innerHTML = pillsHtml;
@@ -2325,7 +2364,6 @@ function renderProgressBarHtml(task) {
 }
 
 function renderTimeSectionHtml(task) {
-  if (!task.isProject) return '';
   const sessions = task.timeSessions || [];
   const totalMins = sessions.reduce((sum, s) => sum + s.minutes, 0);
 
@@ -2404,6 +2442,17 @@ function toggleProjectMode(id) {
   render();
 }
 
+function toggleTimeTracking(id) {
+  const task = store.tasks.find(t => t.id === id);
+  if (!task) return;
+  task.trackTime = !task.trackTime;
+  if (!task.timeSessions) task.timeSessions = [];
+  // Re-open the notes card to show/hide time section
+  closeNotesCard();
+  openNotesSidebar(id);
+  showToast(task.trackTime ? 'Time tracking on' : 'Time tracking off');
+}
+
 function cardVoteUp(id) {
   api.voteUp(id);
   render();
@@ -2468,12 +2517,13 @@ function notesHtmlToText(container) {
 function handleInlineCheck(cb) {
   const line = cb.closest('.notes-line');
   if (!line) return;
-  const wasChecked = cb.checked;
-  if (wasChecked) {
+  if (cb.checked) {
     line.classList.add('checked');
   } else {
     line.classList.remove('checked');
   }
+  // If in add-modal, no need to save/render
+  if (cb.closest('#addTaskNotes')) return;
   saveCurrentNotes();
   render();
   // Reward: spawn a creature when checking off a project sub-item

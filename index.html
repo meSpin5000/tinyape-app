@@ -176,9 +176,10 @@
       <span class="add-modal-title" id="addModalTitle">Add a task</span>
       <button class="add-modal-close" onclick="closeAddModal()">✕</button>
     </div>
+    <div class="add-modal-subtitle" id="addModalSubtitle"></div>
     <input type="text" class="add-modal-input" id="addTaskInput" placeholder="What needs to be done?" autocomplete="off" />
     <div class="add-modal-notes-wrap" id="addModalNotesWrap">
-      <textarea class="add-modal-notes" id="addTaskNotes" placeholder="Add notes…"></textarea>
+      <div class="add-modal-notes" id="addTaskNotes" contenteditable="true" data-placeholder="Add notes…"></div>
     </div>
     <div class="add-modal-pills" id="addModalPills"></div>
     <div class="add-modal-actions" id="addModalActions"></div>

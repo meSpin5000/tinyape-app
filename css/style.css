@@ -258,6 +258,12 @@
     font-weight: 600;
     color: var(--text);
   }
+  .add-modal-subtitle {
+    padding: 0 20px 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
   .add-modal-close {
     background: none;
     border: none;
@@ -307,13 +313,43 @@
     font-family: 'Inter', sans-serif;
     color: var(--text);
     outline: none;
-    resize: none;
-    height: 80px;
+    min-height: 80px;
+    max-height: 200px;
+    overflow-y: auto;
     box-sizing: border-box;
     line-height: 1.5;
   }
-  .add-modal-notes::placeholder {
+  .add-modal-notes:empty::before {
+    content: attr(data-placeholder);
     color: var(--text-muted);
+  }
+  .add-modal-notes:focus {
+    border-color: var(--accent-red);
+  }
+  .add-modal-notes .notes-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    min-height: 22px;
+    line-height: 1.5;
+  }
+  .add-modal-notes .notes-line input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent-red);
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+  .add-modal-notes .notes-line.checked .notes-line-text {
+    text-decoration: line-through;
+    color: var(--text-muted);
+  }
+  .add-modal-notes .notes-line-text {
+    flex: 1;
+    outline: none;
+    min-width: 0;
+    word-break: break-word;
   }
   .add-modal-pills {
     display: flex;
@@ -460,7 +496,7 @@
   .today-item:hover { background: var(--vote-hover); }
   /* Align project rows with today rows (compensate for missing drag handle) */
   .today-item.project-row {
-    padding-left: 28px;
+    padding-left: 32px;
   }
   .drag-handle {
     display: flex;
@@ -2166,17 +2202,17 @@
     position: fixed;
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.18);
     z-index: 9999;
-    width: 340px;
-    max-width: 90vw;
-    max-height: 70vh;
+    width: 380px;
+    max-width: 92vw;
+    max-height: 75vh;
     overflow-y: auto;
-    padding: 16px;
+    padding: 20px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
     animation: noteCardIn 0.15s ease-out;
   }
   @keyframes noteCardIn {
@@ -2187,11 +2223,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: 10px;
   }
   .notes-card-title {
     font-family: 'Source Serif 4', Georgia, serif;
-    font-size: 15px;
+    font-size: 17px;
     font-weight: 600;
     flex: 1;
     min-width: 0;
@@ -2204,9 +2240,9 @@
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 16px;
-    padding: 2px 6px;
-    border-radius: 4px;
+    font-size: 18px;
+    padding: 4px 8px;
+    border-radius: 6px;
     transition: all var(--transition);
     flex-shrink: 0;
   }
@@ -2216,18 +2252,18 @@
   }
   .notes-textarea {
     width: 100%;
-    min-height: 60px;
+    min-height: 70px;
     max-height: 300px;
     overflow-y: auto;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 10px;
-    font-size: 13px;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 14px;
     font-family: 'Inter', sans-serif;
     color: var(--text);
     outline: none;
-    line-height: 1.5;
+    line-height: 1.6;
     transition: border-color var(--transition);
     white-space: pre-wrap;
     word-break: break-word;
@@ -2249,25 +2285,25 @@
   }
   .notes-card-pills {
     display: flex;
-    gap: 4px;
-    flex-wrap: nowrap;
+    gap: 5px;
+    flex-wrap: wrap;
   }
   .notes-card-pill {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 3px;
-    padding: 4px 8px;
-    border-radius: 4px;
+    padding: 5px 10px;
+    border-radius: 6px;
     border: 1px solid var(--border);
     background: var(--bg-secondary);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     font-family: 'Inter', sans-serif;
     cursor: pointer;
     transition: all var(--transition);
     color: var(--text-secondary);
-    height: 24px;
+    height: 28px;
     white-space: nowrap;
   }
   .notes-card-pill:hover {
@@ -2291,8 +2327,7 @@
   .notes-progress-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: 10px;
   }
   .notes-progress-bar {
     flex: 1;
@@ -2308,46 +2343,53 @@
     transition: width 0.3s ease;
   }
   .notes-progress-label {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--text-muted);
     white-space: nowrap;
     font-weight: 600;
   }
   .time-section {
-    border-top: 1px solid var(--border);
-    margin-top: 8px;
-    padding-top: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
   }
   .time-section-header {
-    font-size: 11px;
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 14px;
     font-weight: 600;
-    color: var(--text-secondary);
-    margin-bottom: 6px;
+    color: var(--text);
+    margin-bottom: 10px;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
   }
   .time-total {
     color: var(--accent-green);
     font-weight: 700;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
   }
   .time-session-list {
-    max-height: 100px;
+    max-height: 120px;
     overflow-y: auto;
+    margin-bottom: 10px;
   }
   .time-session-item {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    padding: 3px 0;
+    gap: 8px;
+    font-size: 12px;
+    padding: 5px 0;
     color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-light);
   }
+  .time-session-item:last-child { border-bottom: none; }
   .time-session-item:hover .time-session-delete { opacity: 0.6; }
   .time-session-duration {
     font-weight: 600;
     color: var(--text);
-    min-width: 36px;
+    min-width: 40px;
   }
   .time-session-note {
     flex: 1;
@@ -2359,86 +2401,99 @@
   .time-session-delete {
     opacity: 0;
     cursor: pointer;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--text-muted);
     transition: opacity 0.15s;
   }
   .time-session-delete:hover { color: var(--accent-red) !important; opacity: 1 !important; }
   .time-add-btn {
-    font-size: 11px;
-    color: var(--accent-blue);
+    font-size: 12px;
+    color: var(--accent-green);
     cursor: pointer;
     padding: 4px 0;
+    font-weight: 500;
   }
   .time-add-btn:hover { text-decoration: underline; }
   .time-add-form {
-    background: var(--bg-secondary);
-    border-radius: 6px;
-    padding: 10px;
-    margin-top: 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    margin-top: 10px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
   }
   .time-slider-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
   }
   .time-slider {
     flex: 1;
     accent-color: var(--accent-red);
-    height: 4px;
+    height: 6px;
   }
   .time-slider-label {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 700;
-    color: var(--text);
-    min-width: 48px;
+    color: var(--accent-red);
+    min-width: 52px;
     text-align: right;
   }
   .time-note-input {
     width: 100%;
-    padding: 5px 8px;
+    padding: 8px 12px;
     border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 11px;
+    border-radius: 6px;
+    font-size: 13px;
     font-family: Inter, sans-serif;
-    background: var(--bg);
+    background: var(--bg-card);
     color: var(--text);
     outline: none;
+    box-sizing: border-box;
+    transition: border-color var(--transition);
   }
+  .time-note-input:focus { border-color: var(--accent-red); }
   .time-save-row {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     align-items: center;
   }
   .time-save-btn {
-    padding: 4px 14px;
-    border-radius: 4px;
+    padding: 8px 20px;
+    border-radius: 6px;
     border: none;
     background: var(--accent-green);
     color: #fff;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     font-family: Inter, sans-serif;
     cursor: pointer;
+    transition: opacity 0.15s;
   }
   .time-save-btn:hover { opacity: 0.85; }
   .time-date-input {
-    padding: 4px 6px;
+    padding: 8px 10px;
     border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 11px;
+    border-radius: 6px;
+    font-size: 13px;
     font-family: Inter, sans-serif;
-    background: var(--bg);
+    background: var(--bg-card);
     color: var(--text);
     outline: none;
+    transition: border-color var(--transition);
   }
+  .time-date-input:focus { border-color: var(--accent-red); }
   .project-indicator {
     font-size: 14px;
     margin-left: 4px;
     color: var(--accent-blue);
+  }
+  .time-indicator {
+    font-size: 13px;
+    margin-left: 4px;
+    color: var(--accent-green);
   }
   .recur-inline-icon {
     color: var(--accent-blue);
