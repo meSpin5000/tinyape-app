@@ -872,7 +872,16 @@ function closeAddModal() {
   store.addTaskAsProject = false;
   store.addTaskTrackTime = false;
   const trackSection = document.getElementById('addModalTrackSection');
-  if (trackSection) trackSection.style.display = 'none';
+  if (trackSection) {
+    trackSection.style.display = 'none';
+    // Reset track form values
+    const slider = document.getElementById('addTrackSlider');
+    const sliderLabel = document.getElementById('addTrackSliderLabel');
+    const note = document.getElementById('addTrackNote');
+    if (slider) slider.value = 30;
+    if (sliderLabel) sliderLabel.textContent = '30m';
+    if (note) note.value = '';
+  }
   store.selectedDueDate = null;
   store.selectedRecurring = null;
   store.selectedRecurDays = [];
@@ -898,27 +907,30 @@ function renderAddModalPills() {
   html += `<button class="add-modal-pill ${store.addTaskTrackTime ? 'active' : ''}" onclick="toggleAddTrackTime()">${trackIconSvg} Track</button>`;
   html += `<button class="add-modal-pill ${store.addTaskAsProject ? 'active' : ''}" onclick="toggleAddAsProject()">${projectIconSvg} Project</button>`;
   html += `<button class="add-modal-pill ${addTaskListMode ? 'active' : ''}" onclick="toggleModalListMode()">${checkboxIconSvg} List</button>`;
-  html += `<span class="add-modal-hint">tasks default to 1 week out</span>`;
+  html += `<span class="add-modal-hint">if not specified, tasks default to one week out</span>`;
 
   el.innerHTML = html;
 }
 
 function renderAddModalActions() {
   const el = document.getElementById('addModalActions');
-  let html = '';
 
-  if (addModalContext === 'today') {
-    html += `<button class="add-modal-action-btn primary" onclick="addModalSubmit('today')">Add to Today</button>`;
-    html += `<button class="add-modal-action-btn" onclick="addModalSubmit('ondeck')">On Deck</button>`;
-    html += `<button class="add-modal-action-btn" onclick="addModalSubmit('drawer')">Drawer</button>`;
-  } else if (addModalContext === 'project') {
-    html += `<button class="add-modal-action-btn primary" onclick="addModalSubmit('ondeck')">Add Project</button>`;
-    html += `<button class="add-modal-action-btn" onclick="addModalSubmit('today')">Add to Today</button>`;
-  } else {
-    html += `<button class="add-modal-action-btn primary" onclick="addModalSubmit('ondeck')">Add to On Deck</button>`;
-    html += `<button class="add-modal-action-btn" onclick="addModalSubmit('today')">Today</button>`;
-    html += `<button class="add-modal-action-btn" onclick="addModalSubmit('drawer')">Drawer</button>`;
-  }
+  // Always show all 4 destinations — highlight the contextual default
+  const primaryCtx = addModalContext === 'today' ? 'today'
+    : addModalContext === 'project' ? 'ondeck'
+    : 'ondeck';
+
+  const buttons = [
+    { dest: 'today', label: 'Today' },
+    { dest: 'ondeck', label: store.addTaskAsProject ? 'Projects' : 'On Deck' },
+    { dest: 'drawer', label: 'Drawer' }
+  ];
+
+  let html = '';
+  buttons.forEach(b => {
+    const isPrimary = b.dest === primaryCtx;
+    html += `<button class="add-modal-action-btn${isPrimary ? ' primary' : ''}" onclick="addModalSubmit('${b.dest}')">${b.label}</button>`;
+  });
 
   el.innerHTML = html;
 }
@@ -2263,6 +2275,20 @@ function openNotesSidebar(id, anchorEl) {
   const editable = card.querySelector('#notesEditable');
   editable.addEventListener('input', () => saveCurrentNotes());
   editable.addEventListener('keydown', handleNotesKeydown);
+  // On focus (including Tab), place cursor after last checkbox text, not before checkbox
+  editable.addEventListener('focus', function onEditableFocus() {
+    const firstLine = editable.querySelector('.notes-line');
+    if (firstLine && editable === document.activeElement) {
+      // Only reposition if cursor is at position 0 (default focus landing)
+      const sel = window.getSelection();
+      if (sel.rangeCount) {
+        const r = sel.getRangeAt(0);
+        if (r.startOffset === 0 && (r.startContainer === editable || r.startContainer === firstLine)) {
+          placeCursorAfterCheckbox(editable);
+        }
+      }
+    }
+  });
   setTimeout(() => {
     editable.focus();
     // Place cursor at end
@@ -2784,20 +2810,16 @@ function saveCurrentNotes() {
     const editable = document.getElementById('notesEditable');
     if (editable) task.notes = notesHtmlToText(editable);
   }
-  // Flash "✓ Saved" then revert to "esc to close"
+  // Show "auto-saved ✓" immediately, then revert to "esc to close"
   clearTimeout(notesSaveTimer);
   const hint = document.getElementById('notesHintText');
   if (hint) {
-    hint.textContent = 'esc to close';
-    hint.classList.remove('saved');
+    hint.textContent = 'auto-saved ✓';
+    hint.classList.add('saved');
     notesSaveTimer = setTimeout(() => {
-      hint.textContent = '✓ saved';
-      hint.classList.add('saved');
-      setTimeout(() => {
-        hint.textContent = 'esc to close';
-        hint.classList.remove('saved');
-      }, 1500);
-    }, 600);
+      hint.textContent = 'esc to close';
+      hint.classList.remove('saved');
+    }, 1200);
   }
 }
 
