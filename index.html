@@ -182,6 +182,19 @@
       <div class="add-modal-notes" id="addTaskNotes" contenteditable="true" data-placeholder="Add notes…"></div>
     </div>
     <div class="add-modal-pills" id="addModalPills"></div>
+    <div class="add-modal-track-section" id="addModalTrackSection" style="display:none;">
+      <div class="time-section" style="margin:0;">
+        <div class="time-section-header">⏱ Time tracking enabled</div>
+        <div class="time-add-form" style="display:block; margin-top:8px;">
+          <div class="time-slider-row">
+            <input type="range" class="time-slider" id="addTrackSlider" min="15" max="480" step="15" value="30"
+                   oninput="document.getElementById('addTrackSliderLabel').textContent = formatMinutes(parseInt(this.value))">
+            <span class="time-slider-label" id="addTrackSliderLabel">30m</span>
+          </div>
+          <textarea class="time-note-input" id="addTrackNote" placeholder="What did you work on? (optional)" rows="2"></textarea>
+        </div>
+      </div>
+    </div>
     <div class="add-modal-actions" id="addModalActions"></div>
     <input type="date" id="hiddenDatePicker" onchange="handleDatePick(this.value)" style="position:absolute;opacity:0;pointer-events:none;" />
   </div>

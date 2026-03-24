@@ -299,9 +299,13 @@ const api = {
 const plusSvg = `<svg viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`;
 
 // Small inline SVG icons (outlined, inherit color)
-const sunIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="15"/><line x1="1" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="15" y2="8"/><line x1="3.05" y1="3.05" x2="4.46" y2="4.46"/><line x1="11.54" y1="11.54" x2="12.95" y2="12.95"/><line x1="3.05" y1="12.95" x2="4.46" y2="11.54"/><line x1="11.54" y1="4.46" x2="12.95" y2="3.05"/></svg>`;
 const calIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><line x1="2" y1="7" x2="14" y2="7"/><line x1="5" y1="1.5" x2="5" y2="4.5"/><line x1="11" y1="1.5" x2="11" y2="4.5"/></svg>`;
 const drawerIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="6" y1="10.5" x2="10" y2="10.5"/></svg>`;
+const trackIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 11.5c1-2 2.5-3 4.5-3h2c1 0 2-.3 2.8-1l2.2-2"/><path d="M1.5 11.5c0 1.2.8 2.5 3 2.5h7c1.5 0 3-.5 3-2 0-1-1-1.8-2.5-2l-2-.3"/><circle cx="4" cy="12" r="0.5" fill="currentColor"/><circle cx="7" cy="12.5" r="0.5" fill="currentColor"/></svg>`;
+const checkboxIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/></svg>`;
+const projectIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><polyline points="8,4 8,8 11,9.5"/></svg>`;
+const sunIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1.5" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="14.5" y2="8"/><line x1="3.4" y1="3.4" x2="4.5" y2="4.5"/><line x1="11.5" y1="11.5" x2="12.6" y2="12.6"/><line x1="3.4" y1="12.6" x2="4.5" y2="11.5"/><line x1="11.5" y1="4.5" x2="12.6" y2="3.4"/></svg>`;
+
 
 const celebrationMessages = [
   "Well Done!", "Crushed It!", "Nice Work!", "Nailed It!", "Done Deal!", "Boom!", "Check!", "You Rock!"
@@ -792,6 +796,22 @@ function clearModalNotes() {
 function setModalNotesPlaceholder(text) {
   document.getElementById('addTaskNotes').setAttribute('data-placeholder', text);
 }
+function placeCursorAfterCheckbox(container) {
+  // Find the last .notes-line-text span and place cursor at end
+  const spans = container.querySelectorAll('.notes-line-text');
+  const target = spans.length ? spans[spans.length - 1] : null;
+  if (target) {
+    container.focus();
+    const range = document.createRange();
+    const sel = window.getSelection();
+    range.selectNodeContents(target);
+    range.collapse(false); // collapse to end
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } else {
+    container.focus();
+  }
+}
 
 function openAddModal(context) {
   addModalContext = context || 'ondeck';
@@ -851,6 +871,8 @@ function closeAddModal() {
   document.getElementById('addModalNotesWrap').classList.remove('open');
   store.addTaskAsProject = false;
   store.addTaskTrackTime = false;
+  const trackSection = document.getElementById('addModalTrackSection');
+  if (trackSection) trackSection.style.display = 'none';
   store.selectedDueDate = null;
   store.selectedRecurring = null;
   store.selectedRecurDays = [];
@@ -873,9 +895,9 @@ function renderAddModalPills() {
 
   let html = '';
   html += `<button class="add-modal-pill ${isCustomDate ? 'active' : ''}" id="addTaskSchedBtn" onclick="openAddTaskSchedule(this)">${calIconSvg} ${dateLabel}${recurPart}</button>`;
-  html += `<button class="add-modal-pill ${store.addTaskTrackTime ? 'active' : ''}" onclick="toggleAddTrackTime()">◷ Track</button>`;
-  html += `<button class="add-modal-pill ${store.addTaskAsProject ? 'active' : ''}" onclick="toggleAddAsProject()">⏱ Project</button>`;
-  html += `<button class="add-modal-pill ${addTaskListMode ? 'active' : ''}" onclick="toggleModalListMode()">☐ List</button>`;
+  html += `<button class="add-modal-pill ${store.addTaskTrackTime ? 'active' : ''}" onclick="toggleAddTrackTime()">${trackIconSvg} Track</button>`;
+  html += `<button class="add-modal-pill ${store.addTaskAsProject ? 'active' : ''}" onclick="toggleAddAsProject()">${projectIconSvg} Project</button>`;
+  html += `<button class="add-modal-pill ${addTaskListMode ? 'active' : ''}" onclick="toggleModalListMode()">${checkboxIconSvg} List</button>`;
   html += `<span class="add-modal-hint">tasks default to 1 week out</span>`;
 
   el.innerHTML = html;
@@ -914,14 +936,13 @@ function toggleAddAsProject() {
     subtitleEl.textContent = 'For multi-step tasks with progress and time tracking';
     subtitleEl.style.display = '';
     input.placeholder = 'Project name…';
-    if (!notesWrap.classList.contains('open')) {
-      notesWrap.classList.add('open');
-      if (!getModalNotesText().trim()) {
-        setModalNotesText('[ ] ');
-        addTaskListMode = true;
-      }
-      setModalNotesPlaceholder('Break it into steps…');
+    notesWrap.classList.add('open');
+    if (!getModalNotesText().trim()) {
+      setModalNotesText('[ ] ');
+      addTaskListMode = true;
+      setTimeout(() => placeCursorAfterCheckbox(notes), 50);
     }
+    setModalNotesPlaceholder('Break it into steps…');
   } else {
     titleEl.textContent = addModalContext === 'today' ? 'Add to Today' : 'Add a task';
     subtitleEl.style.display = 'none';
@@ -934,6 +955,8 @@ function toggleAddAsProject() {
 
 function toggleAddTrackTime() {
   store.addTaskTrackTime = !store.addTaskTrackTime;
+  const section = document.getElementById('addModalTrackSection');
+  if (section) section.style.display = store.addTaskTrackTime ? '' : 'none';
   renderAddModalPills();
 }
 
@@ -953,7 +976,7 @@ function toggleModalListMode() {
       return '[ ] ' + trimmed;
     }).join('\n');
     setModalNotesText(newText.trim() || '[ ] ');
-    el.focus();
+    placeCursorAfterCheckbox(el);
   } else {
     const currentText = getModalNotesText();
     const lines = currentText.split('\n');
@@ -993,6 +1016,15 @@ function addModalSubmit(destination) {
   if (store.addTaskTrackTime) {
     task.trackTime = true;
     if (!task.timeSessions) task.timeSessions = [];
+    // Save initial time session if slider was adjusted
+    const slider = document.getElementById('addTrackSlider');
+    const note = document.getElementById('addTrackNote');
+    if (slider && parseInt(slider.value) > 0) {
+      const minutes = parseInt(slider.value);
+      const noteText = note ? note.value.trim() : '';
+      const todayStr = new Date().toISOString().split('T')[0];
+      task.timeSessions.push({ date: todayStr, minutes, note: noteText });
+    }
   }
 
   // Vote up to Today if that's the destination
@@ -2160,9 +2192,9 @@ function openNotesSidebar(id, anchorEl) {
   let pillsHtml = '';
   // Today pill
   if (task.today) {
-    pillsHtml += `<span class="notes-card-pill active" title="In Today list">☀ Today</span>`;
+    pillsHtml += `<span class="notes-card-pill active" title="In Today list">${sunIconSvg} Today</span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardVoteUp(${id})" title="Add to Today">☀ Today</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="cardVoteUp(${id})" title="Add to Today">${sunIconSvg} Today</span>`;
   }
   // Unified schedule pill
   const hasSchedule = due || recurLabel;
@@ -2170,21 +2202,21 @@ function openNotesSidebar(id, anchorEl) {
     const schedParts = [];
     if (due) schedParts.push(due.text);
     if (recurLabel) schedParts.push('↻ ' + recurLabel + (dayLabels ? ' · ' + dayLabels : ''));
-    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${id}, this)" title="Edit schedule">✦ ${schedParts.join(' · ')} <span class="pill-x" onclick="event.stopPropagation(); cardClearSchedule(${id})">✕</span></span>`;
+    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${id}, this)" title="Edit schedule">${calIconSvg} ${schedParts.join(' · ')} <span class="pill-x" onclick="event.stopPropagation(); cardClearSchedule(${id})">✕</span></span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${id}, this)" title="Set date / repeat">✦ Schedule</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${id}, this)" title="Set date / repeat">${calIconSvg} Schedule</span>`;
   }
 
   // Checklist pill
   const hasChecklist = task.notes && /^\[ \] |^\[x\] /m.test(task.notes);
-  pillsHtml += `<span class="notes-card-pill${hasChecklist ? ' active' : ''}" onclick="toggleChecklistLines(${id})" title="Add checklist">☐ List</span>`;
+  pillsHtml += `<span class="notes-card-pill${hasChecklist ? ' active' : ''}" onclick="toggleChecklistLines(${id})" title="Add checklist">${checkboxIconSvg} List</span>`;
 
   // Project pill
-  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${id})" title="Toggle project mode">⏱ Project</span>`;
+  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${id})" title="Toggle project mode">${projectIconSvg} Project</span>`;
 
   // Track pill — available on any task
   const hasTime = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
-  pillsHtml += `<span class="notes-card-pill${hasTime ? ' active' : ''}" onclick="toggleTimeTracking(${id})" title="Track time">◷ Track</span>`;
+  pillsHtml += `<span class="notes-card-pill${hasTime ? ' active' : ''}" onclick="toggleTimeTracking(${id})" title="Track time">${trackIconSvg} Track</span>`;
 
   // Build progress bar (only for projects with checklist items)
   const progressHtml = renderProgressBarHtml(task);
@@ -2284,9 +2316,9 @@ function refreshSidebarMeta() {
 
   let pillsHtml = '';
   if (task.today) {
-    pillsHtml += `<span class="notes-card-pill active" title="In Today list">☀ Today</span>`;
+    pillsHtml += `<span class="notes-card-pill active" title="In Today list">${sunIconSvg} Today</span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardVoteUp(${id})" title="Add to Today">☀ Today</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="cardVoteUp(${id})" title="Add to Today">${sunIconSvg} Today</span>`;
   }
   // Unified schedule pill
   const hasSchedule = due || recurLabel;
@@ -2294,21 +2326,21 @@ function refreshSidebarMeta() {
     const schedParts = [];
     if (due) schedParts.push(due.text);
     if (recurLabel) schedParts.push('↻ ' + recurLabel + (dayLabels ? ' · ' + dayLabels : ''));
-    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${id}, this)" title="Edit schedule">✦ ${schedParts.join(' · ')} <span class="pill-x" onclick="event.stopPropagation(); cardClearSchedule(${id})">✕</span></span>`;
+    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${id}, this)" title="Edit schedule">${calIconSvg} ${schedParts.join(' · ')} <span class="pill-x" onclick="event.stopPropagation(); cardClearSchedule(${id})">✕</span></span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${id}, this)" title="Set date / repeat">✦ Schedule</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${id}, this)" title="Set date / repeat">${calIconSvg} Schedule</span>`;
   }
 
   // Checklist pill
   const hasChecklist2 = task.notes && /^\[ \] |^\[x\] /m.test(task.notes);
-  pillsHtml += `<span class="notes-card-pill${hasChecklist2 ? ' active' : ''}" onclick="toggleChecklistLines(${id})" title="Add checklist">☐ List</span>`;
+  pillsHtml += `<span class="notes-card-pill${hasChecklist2 ? ' active' : ''}" onclick="toggleChecklistLines(${id})" title="Add checklist">${checkboxIconSvg} List</span>`;
 
   // Project pill
-  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${id})" title="Toggle project mode">⏱ Project</span>`;
+  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${id})" title="Toggle project mode">${projectIconSvg} Project</span>`;
 
   // Track pill
   const hasTime2 = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
-  pillsHtml += `<span class="notes-card-pill${hasTime2 ? ' active' : ''}" onclick="toggleTimeTracking(${id})" title="Track time">◷ Track</span>`;
+  pillsHtml += `<span class="notes-card-pill${hasTime2 ? ' active' : ''}" onclick="toggleTimeTracking(${id})" title="Track time">${trackIconSvg} Track</span>`;
 
   const pillsContainer = notesCardEl.querySelector('.notes-card-pills');
   if (pillsContainer) pillsContainer.innerHTML = pillsHtml;
@@ -3014,8 +3046,12 @@ const apeEl = document.getElementById('pixelApe');
 drawPixelApe(apeEl);
 
 // Ape behavior - hangs small by logo, grows big when exploring
-const APE_HOME = window.innerWidth <= 640 ? 65 : 90;
-const APE_ZONE = window.innerWidth <= 640 ? 100 : 160;
+function getApeHome() { return window.innerWidth <= 640 ? 65 : 90; }
+function getApeZone() { return window.innerWidth <= 640 ? 100 : 160; }
+// Keep backward-compat references (evaluated dynamically)
+let APE_HOME = getApeHome();
+let APE_ZONE = getApeZone();
+window.addEventListener('resize', () => { APE_HOME = getApeHome(); APE_ZONE = getApeZone(); });
 let apeState = { x: APE_HOME, direction: 1, resting: true, restTimer: null, isBig: false, walkCancelled: false };
 
 function updateApeSize() {
@@ -3104,7 +3140,8 @@ function apeWalk() {
       stopApeArmSwing();
       return;
     }
-    const nextX = apeState.x + dx * 1.5;
+    const headerWNow = document.querySelector('header').offsetWidth;
+    const nextX = Math.max(0, Math.min(apeState.x + dx * 1.5, headerWNow - 50));
     const hitCreature = apeHitsCreature(nextX);
     if (hitCreature) {
       // Both stop and hang out, then go opposite ways
@@ -3161,7 +3198,8 @@ function apeWalkHome() {
       if (headerCreatures.length > 0) apeIdle();
       return;
     }
-    const nextX = apeState.x + dx * 1.5;
+    const hWHome = document.querySelector('header').offsetWidth;
+    const nextX = Math.max(0, Math.min(apeState.x + dx * 1.5, hWHome - 50));
 
     apeState.x = nextX;
     apeEl.style.left = apeState.x + 'px';
@@ -3585,7 +3623,16 @@ function creatureWalkTo(c, target, onDone) {
   c.state = 'walking';
 
   const step = () => {
-    const nextX = c.x + dx * 1;
+    const headerWNow = document.querySelector('header').offsetWidth;
+    const cw = getCreatureW(c);
+    const nextX = Math.max(0, Math.min(c.x + dx * 1, headerWNow - cw - 10));
+    // If we hit the edge, stop
+    if (nextX <= 0 || nextX >= headerWNow - cw - 10) {
+      c.el.classList.remove('walking');
+      c.state = 'idle';
+      creatureIdle(c);
+      return;
+    }
     if (creatureBlocked(c, nextX)) {
       // Stop and hang out for a bit, then move on
       c.el.classList.remove('walking');
@@ -3651,7 +3698,8 @@ function apeGreetAtSpot(creature, spotX) {
       return;
     }
 
-    apeState.x = nextX;
+    const hWNow = document.querySelector('header').offsetWidth;
+    apeState.x = Math.max(0, Math.min(nextX, hWNow - 50));
     apeEl.style.left = apeState.x + 'px';
     updateApeSize();
     if ((dx > 0 && apeState.x < target) || (dx < 0 && apeState.x > target)) {

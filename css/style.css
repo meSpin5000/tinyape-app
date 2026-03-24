@@ -386,6 +386,18 @@
   .add-modal-pill svg {
     width: 13px;
     height: 13px;
+    flex-shrink: 0;
+  }
+  .add-modal-track-section {
+    padding: 0 20px 8px;
+  }
+  .add-modal-track-section .time-section {
+    padding: 14px;
+  }
+  .add-modal-track-section .time-add-form {
+    padding: 0;
+    border: none;
+    background: none;
   }
   .add-modal-actions {
     display: flex;
@@ -2311,6 +2323,11 @@
     height: 28px;
     white-space: nowrap;
   }
+  .notes-card-pill svg {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+  }
   .notes-card-pill:hover {
     border-color: var(--accent-red);
     color: var(--accent-red);
@@ -2411,13 +2428,6 @@
     transition: opacity 0.15s;
   }
   .time-session-delete:hover { color: var(--accent-red) !important; opacity: 1 !important; }
-  .time-add-btn {
-    font-size: 12px;
-    color: var(--accent-green);
-    cursor: pointer;
-    padding: 4px 0;
-    font-weight: 500;
-  }
   .time-add-pill {
     display: inline-flex;
     align-items: center;
@@ -2437,7 +2447,6 @@
     background: var(--accent-red);
     color: #fff;
   }
-  .time-add-btn:hover { text-decoration: underline; }
   .time-add-form {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -3159,6 +3168,50 @@
       font-size: 9px;
       height: 22px;
     }
+    .notes-card-pill svg {
+      width: 10px;
+      height: 10px;
+    }
+
+    /* Add modal pill SVGs on mobile */
+    .add-modal-pill svg {
+      width: 11px;
+      height: 11px;
+    }
+
+    /* Track accordion in add modal — mobile */
+    .add-modal-track-section {
+      padding: 0 16px 8px;
+    }
+    .add-modal-track-section .time-section {
+      padding: 12px;
+    }
+    .add-modal-track-section .time-slider-label {
+      font-size: 14px;
+    }
+
+    /* Add modal subtitle — mobile */
+    .add-modal-subtitle {
+      padding: 0 16px 4px;
+      font-size: 11px;
+    }
+
+    /* Time add pill — mobile */
+    .time-add-pill {
+      font-size: 11px;
+      padding: 5px 12px;
+    }
+
+    /* Time form — mobile */
+    .time-section {
+      padding: 12px;
+    }
+    .time-add-form {
+      padding: 14px;
+    }
+    .time-note-input {
+      min-height: 50px;
+    }
 
     /* Schedule popover — centered on mobile */
     .schedule-popover {
@@ -3318,5 +3371,18 @@
     .notes-card-pill {
       padding: 2px 5px;
       font-size: 8px;
+    }
+    .notes-card-pill svg {
+      width: 9px;
+      height: 9px;
+    }
+    .add-modal-pill {
+      font-size: 10px;
+      height: 24px;
+      padding: 0 6px;
+    }
+    .add-modal-pill svg {
+      width: 10px;
+      height: 10px;
     }
   }
