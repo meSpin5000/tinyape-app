@@ -2,9 +2,71 @@
 // Wraps in-memory API mutations with Supabase persistence
 // Operates "local-first" — the in-memory store is always fast,
 // and DB writes happen async in the background.
+// Failed writes are queued and retried automatically.
 
 (function() {
   'use strict';
+
+  // ─── RETRY QUEUE ───
+  // Tasks that failed to save to Supabase get queued here for retry
+  const pendingWrites = [];  // [{ task: {...}, retries: 0 }]
+  const MAX_RETRIES = 10;
+
+  window._syncQueue = pendingWrites;  // expose for debugging
+
+  // Check if there are unsaved local changes
+  window._hasPendingWrites = function() {
+    return pendingWrites.length > 0;
+  };
+
+  // Flush all pending writes to Supabase (called before refresh)
+  window._flushSyncQueue = async function() {
+    if (pendingWrites.length === 0) return;
+
+    const DB = window.TinyApeDB;
+    if (!DB) return;
+
+    // Work through a copy so we can safely modify the queue
+    const batch = pendingWrites.splice(0, pendingWrites.length);
+    const stillFailing = [];
+
+    for (const entry of batch) {
+      try {
+        const saved = await DB.saveTask(entry.task);
+        if (saved && saved.id !== entry.task.id) {
+          // Update local ID with the DB UUID
+          const localTask = store.tasks.find(t => t.id === entry.task.id);
+          if (localTask) localTask.id = saved.id;
+          entry.task.id = saved.id;
+        }
+      } catch (err) {
+        console.error('Retry failed for task:', entry.task.title, err);
+        entry.retries++;
+        if (entry.retries < MAX_RETRIES) {
+          stillFailing.push(entry);
+        } else {
+          console.error('Giving up on task after max retries:', entry.task.title);
+        }
+      }
+    }
+
+    // Put failures back in the queue
+    stillFailing.forEach(e => pendingWrites.push(e));
+  };
+
+  // Get IDs of tasks that only exist locally (never saved to DB)
+  // These have local integer IDs rather than DB UUIDs
+  window._getUnsavedTaskIds = function() {
+    const unsaved = new Set();
+    // Local-only tasks have integer IDs (from store.nextId)
+    // DB tasks have UUID strings
+    store.tasks.forEach(t => {
+      if (typeof t.id === 'number') unsaved.add(t.id);
+    });
+    // Also include any tasks in the pending writes queue
+    pendingWrites.forEach(e => unsaved.add(e.task.id));
+    return unsaved;
+  };
 
   // Wait for app.js to define `api` and `store`, then patch mutations
   function patchApiForSync() {
@@ -19,10 +81,24 @@
       return;
     }
 
-    // Helper: persist a task to Supabase (fire-and-forget)
+    // Helper: persist a task to Supabase (with retry on failure)
     function persistTask(task) {
       if (!task) return;
-      DB.saveTask(task).catch(err => console.error('Sync error (saveTask):', err));
+      DB.saveTask(task).then(saved => {
+        if (saved && saved.id !== task.id) {
+          // Update local ID with DB UUID
+          task.id = saved.id;
+        }
+      }).catch(err => {
+        console.error('Sync error (saveTask), queueing retry:', err);
+        // Check if this task is already in the retry queue
+        const existing = pendingWrites.find(e => e.task.id === task.id);
+        if (existing) {
+          existing.task = { ...task };  // update with latest state
+        } else {
+          pendingWrites.push({ task: { ...task }, retries: 0 });
+        }
+      });
     }
 
     // Helper: persist all today tasks (for reorder)
@@ -35,15 +111,14 @@
     const _origAddTask = api.addTask.bind(api);
     api.addTask = function(title, category, recurring, recurDays, dueDate, drawer) {
       const task = _origAddTask(title, category, recurring, recurDays, dueDate, drawer);
-      // Save to DB — the DB will assign a UUID, but we keep the local integer ID
-      // for this session. On next reload, IDs come from DB.
       DB.saveTask(task).then(saved => {
         if (saved && saved.id !== task.id) {
-          // Replace local integer ID with DB UUID
-          const oldId = task.id;
           task.id = saved.id;
         }
-      }).catch(err => console.error('Sync error (addTask):', err));
+      }).catch(err => {
+        console.error('Sync error (addTask), queueing retry:', err);
+        pendingWrites.push({ task: { ...task }, retries: 0 });
+      });
       return task;
     };
 
@@ -52,16 +127,20 @@
     api.deleteTask = function(id) {
       const task = store.tasks.find(t => t.id === id);
       _origDeleteTask(id);
-      // In DB, mark as killed (not hard delete)
       if (task) {
         const killedVersion = store.killedTasks.find(t => t.killedAt &&
           (t.id === id || t.title === task.title));
         if (killedVersion) {
-          DB.saveTask({ ...killedVersion, killed: true }).catch(err =>
-            console.error('Sync error (deleteTask):', err));
+          DB.saveTask({ ...killedVersion, killed: true }).catch(err => {
+            console.error('Sync error (deleteTask), queueing retry:', err);
+            pendingWrites.push({ task: { ...killedVersion, killed: true }, retries: 0 });
+          });
         } else {
-          DB.saveTask({ ...task, killed: true, killedAt: new Date().toISOString() }).catch(err =>
-            console.error('Sync error (deleteTask):', err));
+          const killedTask = { ...task, killed: true, killedAt: new Date().toISOString() };
+          DB.saveTask(killedTask).catch(err => {
+            console.error('Sync error (deleteTask), queueing retry:', err);
+            pendingWrites.push({ task: killedTask, retries: 0 });
+          });
         }
       }
     };
@@ -111,7 +190,6 @@
     const _origAddTime = api.addTimeSession.bind(api);
     api.addTimeSession = function(id, date, minutes, note) {
       const task = _origAddTime(id, date, minutes, note);
-      // Save time session to its own table AND update task
       persistTask(task);
       DB.saveTimeSession({ taskId: id, date, minutes, note: note || '' })
         .catch(err => console.error('Sync error (addTimeSession):', err));
@@ -132,12 +210,9 @@
       const task = _origToggleDone(id);
       persistTask(task);
       if (task && task.done) {
-        // Log completion event
         DB.saveCompletionEvent().catch(err =>
           console.error('Sync error (completionEvent):', err));
         persistTodayOrder();
-        // If recurring, the respawned task was already created by _origToggleDone
-        // Find and persist the new task
         const respawned = store.tasks.find(t =>
           t.title === task.title && !t.done && t.id !== task.id && t.recurring);
         if (respawned) persistTask(respawned);
@@ -182,8 +257,6 @@
     const _origDelCat = api.deleteDrawerCategory.bind(api);
     api.deleteDrawerCategory = function(key) {
       _origDelCat(key);
-      // Find the category in DB and delete it
-      // We need to find by key — the DB stores as separate records
       DB.deleteDrawerCategory(key)
         .catch(err => console.error('Sync error (deleteDrawerCategory):', err));
     };
@@ -212,16 +285,18 @@
     const _origSaveNotes = window.saveCurrentNotes;
     window.saveCurrentNotes = function() {
       _origSaveNotes();
-      // Debounce the DB write for notes (they change on every keystroke)
       clearTimeout(window._notesSyncTimer);
       window._notesSyncTimer = setTimeout(() => {
         if (typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null) {
           const task = store.tasks.find(t => t.id === currentNotesTaskId);
           if (task) {
-            DB.saveTask(task).catch(err => console.error('Sync error (notes):', err));
+            DB.saveTask(task).catch(err => {
+              console.error('Sync error (notes), queueing retry:', err);
+              pendingWrites.push({ task: { ...task }, retries: 0 });
+            });
           }
         }
-      }, 2000); // 2 second debounce for notes
+      }, 2000);
     };
   }
 
@@ -235,8 +310,6 @@
     const DB = window.TinyApeDB;
     if (!DB) return;
 
-    // bumpCounter already calls logCompletion() which adds to completionLog
-    // We patch logCompletion instead
     if (typeof logCompletion !== 'undefined') {
       const _origLog = window.logCompletion;
       window.logCompletion = function() {

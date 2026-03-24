@@ -10,6 +10,7 @@ const store = {
   drawerOpen: false,
   drawerCatFilter: null,
   drawerCategories: {},
+  addTaskAsProject: false,
 };
 
 const categories = {
@@ -463,14 +464,16 @@ function renderKilled() {
 
 function renderProjectsList() {
   const el = document.getElementById('projectsList');
-  const section = document.getElementById('projectsSection');
+  const emptyEl = document.getElementById('projectsEmpty');
   const projects = api.getProjectTasks();
 
   if (!projects.length) {
-    section.style.display = 'none';
+    el.innerHTML = '';
+    if (emptyEl) emptyEl.style.display = '';
+    document.getElementById('projectsCount').textContent = '';
     return;
   }
-  section.style.display = '';
+  if (emptyEl) emptyEl.style.display = 'none';
   document.getElementById('projectsCount').textContent = `${projects.length}`;
 
   el.innerHTML = projects.map((t, idx) => {
@@ -638,6 +641,7 @@ function renderAddTaskOptions() {
     : '';
   const isCustom = store.selectedDueDate || store.selectedRecurring || store.selectedRecurDays.length;
   html += `<button class="add-pill ${isCustom ? 'active' : ''}" id="addTaskSchedBtn" onclick="openAddTaskSchedule(this)">${calIconSvg} ${dateLabel}${recurPart}</button>`;
+  html += `<button class="add-pill ${store.addTaskAsProject ? 'active' : ''}" onclick="toggleAddAsProject()">⏱ Project</button>`;
   html += `<button class="add-pill" onclick="addTaskToDrawer()">${drawerIconSvg} Drawer</button>`;
 
   el.innerHTML = html;
@@ -863,12 +867,42 @@ function addTask() {
     dueDate
   );
   task.notes = getAndClearAddNotes();
+  // If Project pill is active, mark as project
+  if (store.addTaskAsProject) {
+    task.isProject = true;
+    if (!task.timeSessions) task.timeSessions = [];
+    store.addTaskAsProject = false;
+  }
   input.value = '';
+  input.placeholder = 'Add a task…';
   store.selectedDueDate = null;
   store.selectedRecurring = null;
   store.selectedRecurDays = [];
   render();
-  showToast('Added to On Deck');
+  showToast(task.isProject ? 'Project added to On Deck' : 'Added to On Deck');
+}
+
+function toggleAddAsProject() {
+  store.addTaskAsProject = !store.addTaskAsProject;
+  const input = document.getElementById('addTaskInput');
+  input.placeholder = store.addTaskAsProject ? 'Add a project…' : 'Add a task…';
+  renderAddTaskOptions();
+}
+
+function openAddProjectInline() {
+  // Focus the main add-task input with Project pill pre-activated
+  store.addTaskAsProject = true;
+  renderAddTaskOptions();
+  const input = document.getElementById('addTaskInput');
+  input.focus();
+  input.placeholder = 'Add a project…';
+  // Reset placeholder when project toggle is turned off or task is added
+}
+
+function focusAddTask() {
+  const input = document.getElementById('addTaskInput');
+  input.focus();
+  input.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function addTaskToToday() {
@@ -888,6 +922,11 @@ function addTaskToToday() {
     dueDate
   );
   task.notes = getAndClearAddNotes();
+  if (store.addTaskAsProject) {
+    task.isProject = true;
+    if (!task.timeSessions) task.timeSessions = [];
+    store.addTaskAsProject = false;
+  }
   api.voteUp(task.id);
   input.value = '';
   store.selectedDueDate = null;

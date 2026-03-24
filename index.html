@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TinyApe — Swing Through the Day</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>TinyApe - Small and powerful.</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
@@ -189,18 +190,28 @@
   </div>
 
   <!-- PROJECTS -->
-  <div id="projectsSection" style="display:none;">
+  <div id="projectsSection">
     <div class="section-header" style="margin-top:28px;">
       <h2 class="section-title">Projects</h2>
-      <span class="section-count" id="projectsCount"></span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="section-count" id="projectsCount"></span>
+        <button class="section-add-btn" onclick="openAddProjectInline()" title="Add project">+ Add</button>
+      </div>
     </div>
     <div id="projectsList"></div>
+    <div id="projectsEmpty" class="section-empty-state">
+      <span style="font-size:16px;">📋</span>
+      <span>Turn any task into a project to track progress</span>
+    </div>
   </div>
 
   <!-- ON DECK -->
   <div class="section-header">
     <h2 class="section-title">On Deck <span style="font-size:10px; color:var(--text-muted); font-weight:400; font-style:italic; font-family:Inter,sans-serif; margin-left:4px; vertical-align:baseline;">[click to vote up]</span></h2>
-    <span class="section-count" id="backlogCount"></span>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="section-count" id="backlogCount"></span>
+      <button class="section-add-btn" onclick="focusAddTask()" title="Add task">+ Add</button>
+    </div>
   </div>
   <div class="backlog-list" id="backlogList"></div>
 
@@ -354,6 +365,12 @@ async function loadAndShowApp() {
 
   await refreshFromSupabase();
 
+  // Seed default drawer categories for new users
+  if (Object.keys(store.drawerCategories).length === 0) {
+    api.addDrawerCategory('work', 'Work', '#3498db');
+    api.addDrawerCategory('personal', 'Personal', '#27ae60');
+  }
+
   document.getElementById('loadingPage').style.display = 'none';
   document.getElementById('appPage').style.display = 'block';
 
@@ -366,18 +383,46 @@ async function loadAndShowApp() {
   if (store.tasks.length === 0 && store.killedTasks.length === 0) {
     setTimeout(() => showToast('Welcome to TinyApe! Add your first task to get started.'), 500);
   }
+
+  // Start periodic background sync (every 30s)
+  startPeriodicSync();
 }
 
 // ─── REFRESH DATA FROM SUPABASE ───
-// Called on initial load AND when the tab regains focus (cross-device sync)
+// Called on initial load, tab focus, and every 30 seconds.
+// 1. Flushes any pending writes (failed saves) to Supabase first
+// 2. Pulls latest state from Supabase
+// 3. Preserves any local-only tasks that haven't been saved yet
 async function refreshFromSupabase() {
   try {
+    // Step 1: Flush any pending writes before pulling fresh data
+    if (window._flushSyncQueue) {
+      await window._flushSyncQueue();
+    }
+
+    // Step 2: Remember local-only tasks (integer IDs = never saved to DB)
+    const localOnlyTasks = store.tasks.filter(t => typeof t.id === 'number');
+
+    // Step 3: Pull fresh data from Supabase
     const data = await TinyApeDB.loadAllData();
 
     if (data) {
-      // Populate the in-memory store
+      // Replace store with DB data
       store.tasks = data.tasks || [];
       store.killedTasks = data.killedTasks || [];
+
+      // Step 4: Re-add any local-only tasks that didn't make it to DB yet
+      // (These will be retried on next sync cycle)
+      if (localOnlyTasks.length > 0) {
+        localOnlyTasks.forEach(localTask => {
+          // Only re-add if it's not already in the DB (by title match)
+          const alreadyInDb = store.tasks.some(t =>
+            t.title === localTask.title && t.createdAt);
+          if (!alreadyInDb) {
+            store.tasks.push(localTask);
+          }
+        });
+      }
 
       // Convert drawerCategories array to object
       if (data.drawerCategories && Array.isArray(data.drawerCategories)) {
@@ -400,7 +445,7 @@ async function refreshFromSupabase() {
         const n = typeof t.id === 'number' ? t.id : 0;
         return n > max ? n : max;
       }, 0);
-      store.nextId = maxId + 1;
+      store.nextId = Math.max(store.nextId || 0, maxId + 1);
 
       // Surface drawer tasks that are now within 14 days
       api.surfaceDrawerTasks();
@@ -420,6 +465,24 @@ document.addEventListener('visibilitychange', async () => {
     renderHallOfFame();
   }
 });
+
+// ─── PERIODIC BACKGROUND SYNC ───
+// Every 30 seconds: flush pending writes + pull latest from Supabase
+// This catches changes from other devices even if you don't switch tabs
+let _syncInterval = null;
+function startPeriodicSync() {
+  if (_syncInterval) return;
+  _syncInterval = setInterval(async () => {
+    // Only sync if app is visible and user is logged in
+    if (document.visibilityState !== 'visible') return;
+    if (document.getElementById('appPage').style.display === 'none') return;
+
+    await refreshFromSupabase();
+    setDate();
+    render();
+    renderHallOfFame();
+  }, 30000);  // 30 seconds
+}
 
 boot();
 </script>
