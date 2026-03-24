@@ -11,6 +11,7 @@ const store = {
   drawerCatFilter: null,
   drawerCategories: {},
   addTaskAsProject: false,
+  addTaskTrackTime: false,
 };
 
 const categories = {
@@ -367,7 +368,8 @@ function renderToday() {
   const active = api.getTodayTasks();
 
   if (active.length === 0) {
-    el.innerHTML = `<div class="today-empty"><span>☀️</span>Vote up tasks to plan your day</div>`;
+    el.innerHTML = `<div class="today-empty"><canvas id="emptyApeIcon" width="24" height="24" style="display:block;margin:0 auto 8px;"></canvas>Add or vote up tasks and start the day!</div>`;
+    setTimeout(() => { const c = document.getElementById('emptyApeIcon'); if (c) drawPixelApe(c, 0); }, 10);
     return;
   }
 
@@ -471,11 +473,9 @@ function renderProjectsList() {
   if (!projects.length) {
     el.innerHTML = '';
     if (emptyEl) emptyEl.style.display = '';
-    document.getElementById('projectsCount').textContent = '';
     return;
   }
   if (emptyEl) emptyEl.style.display = 'none';
-  document.getElementById('projectsCount').textContent = `${projects.length}`;
 
   el.innerHTML = projects.map((t, idx) => {
     const prog = api.getChecklistProgress(t.id);
@@ -643,7 +643,7 @@ function updateCounts() {
   const backlog = api.getBacklogTasks();
 
   document.getElementById('todayCount').textContent = `${today.length} task${today.length !== 1 ? 's' : ''}`;
-  document.getElementById('backlogCount').textContent = `${backlog.length} task${backlog.length !== 1 ? 's' : ''}`;
+  // Counters removed from Projects and On Deck per user request
 
   // Update daily counter
   const counter = document.getElementById('dailyCounter');
@@ -850,6 +850,7 @@ function closeAddModal() {
   clearModalNotes();
   document.getElementById('addModalNotesWrap').classList.remove('open');
   store.addTaskAsProject = false;
+  store.addTaskTrackTime = false;
   store.selectedDueDate = null;
   store.selectedRecurring = null;
   store.selectedRecurDays = [];
@@ -872,6 +873,7 @@ function renderAddModalPills() {
 
   let html = '';
   html += `<button class="add-modal-pill ${isCustomDate ? 'active' : ''}" id="addTaskSchedBtn" onclick="openAddTaskSchedule(this)">${calIconSvg} ${dateLabel}${recurPart}</button>`;
+  html += `<button class="add-modal-pill ${store.addTaskTrackTime ? 'active' : ''}" onclick="toggleAddTrackTime()">◷ Track</button>`;
   html += `<button class="add-modal-pill ${store.addTaskAsProject ? 'active' : ''}" onclick="toggleAddAsProject()">⏱ Project</button>`;
   html += `<button class="add-modal-pill ${addTaskListMode ? 'active' : ''}" onclick="toggleModalListMode()">☐ List</button>`;
   html += `<span class="add-modal-hint">tasks default to 1 week out</span>`;
@@ -930,6 +932,11 @@ function toggleAddAsProject() {
   renderAddModalActions();
 }
 
+function toggleAddTrackTime() {
+  store.addTaskTrackTime = !store.addTaskTrackTime;
+  renderAddModalPills();
+}
+
 function toggleModalListMode() {
   addTaskListMode = !addTaskListMode;
   const el = document.getElementById('addTaskNotes');
@@ -979,6 +986,12 @@ function addModalSubmit(destination) {
   // Mark as project if toggled
   if (store.addTaskAsProject) {
     task.isProject = true;
+    if (!task.timeSessions) task.timeSessions = [];
+  }
+
+  // Enable time tracking if toggled
+  if (store.addTaskTrackTime) {
+    task.trackTime = true;
     if (!task.timeSessions) task.timeSessions = [];
   }
 
@@ -2194,7 +2207,7 @@ function openNotesSidebar(id, anchorEl) {
   // Position card near the task row
   if (anchorEl) {
     const rect = anchorEl.getBoundingClientRect();
-    const cardWidth = 380;
+    const cardWidth = 420;
 
     // Horizontal: center on the task row, but keep within viewport
     let left = rect.left + (rect.width / 2) - (cardWidth / 2);
@@ -2395,7 +2408,7 @@ function renderTimeSectionHtml(task) {
                oninput="document.getElementById('timeSliderLabel').textContent = formatMinutes(parseInt(this.value))">
         <span class="time-slider-label" id="timeSliderLabel">15m</span>
       </div>
-      <input type="text" class="time-note-input" id="timeSessionNote" placeholder="What did you work on? (optional)" />
+      <textarea class="time-note-input" id="timeSessionNote" placeholder="What did you work on? (optional)" rows="2"></textarea>
       <div class="time-save-row">
         <button class="time-save-btn" onclick="saveTimeSession()">Save</button>
       </div>

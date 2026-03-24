@@ -470,6 +470,11 @@
     font-size: 24px;
     margin-bottom: 8px;
   }
+  .today-empty canvas {
+    image-rendering: pixelated;
+    width: 48px;
+    height: 48px;
+  }
 
   .today-item {
     display: flex;
@@ -2205,7 +2210,7 @@
     border-radius: 12px;
     box-shadow: 0 12px 40px rgba(0,0,0,0.18);
     z-index: 9999;
-    width: 380px;
+    width: 420px;
     max-width: 92vw;
     max-height: 75vh;
     overflow-y: auto;
@@ -2418,11 +2423,11 @@
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 14px;
+    padding: 18px;
     margin-top: 10px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
   }
   .time-slider-row {
     display: flex;
@@ -2443,7 +2448,7 @@
   }
   .time-note-input {
     width: 100%;
-    padding: 8px 12px;
+    padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: 6px;
     font-size: 13px;
@@ -2453,18 +2458,21 @@
     outline: none;
     box-sizing: border-box;
     transition: border-color var(--transition);
+    min-height: 60px;
+    resize: vertical;
   }
   .time-note-input:focus { border-color: var(--accent-red); }
   .time-save-row {
     display: flex;
     gap: 8px;
     align-items: center;
+    margin-top: 6px;
   }
   .time-save-btn {
     padding: 8px 20px;
     border-radius: 6px;
     border: none;
-    background: var(--accent-green);
+    background: var(--accent-red);
     color: #fff;
     font-size: 13px;
     font-weight: 600;
