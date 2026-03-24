@@ -823,14 +823,14 @@ function openAddModal(context) {
     subtitleEl.style.display = 'none';
     input.placeholder = 'What needs to be done?';
     setModalNotesPlaceholder('Add notes…');
-    notesWrap.classList.remove('open');
+    notesWrap.classList.add('open');
     clearModalNotes();
   } else {
     titleEl.textContent = 'Add a task';
     subtitleEl.style.display = 'none';
     input.placeholder = 'What needs to be done?';
     setModalNotesPlaceholder('Add notes…');
-    notesWrap.classList.remove('open');
+    notesWrap.classList.add('open');
     clearModalNotes();
   }
 
@@ -2398,7 +2398,7 @@ function renderTimeSectionHtml(task) {
       ⏱ Time${totalMins ? ' — <span class="time-total">' + formatMinutes(totalMins) + ' total</span>' : ''}
     </div>
     ${sessionsHtml ? `<div class="time-session-list">${sessionsHtml}</div>` : ''}
-    <span class="time-add-btn" onclick="toggleTimeAddForm()">+ Add session</span>
+    <button class="time-add-pill" onclick="toggleTimeAddForm()">+ Add session</button>
     <div class="time-add-form" id="timeAddForm" style="display:none;">
       <div class="time-save-row">
         <input type="date" class="time-date-input" id="timeSessionDate" value="${todayStr}" />
@@ -2460,9 +2460,25 @@ function toggleTimeTracking(id) {
   if (!task) return;
   task.trackTime = !task.trackTime;
   if (!task.timeSessions) task.timeSessions = [];
-  // Re-open the notes card to show/hide time section
-  closeNotesCard();
-  openNotesSidebar(id);
+
+  // Toggle time section inline (accordion) without reopening the card
+  if (notesCardEl) {
+    const existingTime = notesCardEl.querySelector('#timeSection');
+    if (task.trackTime || task.isProject || (task.timeSessions && task.timeSessions.length > 0)) {
+      // Show time section
+      if (!existingTime) {
+        const timeHtml = renderTimeSectionHtml(task);
+        const insertPoint = notesCardEl.querySelector('.notes-card-pills');
+        if (insertPoint) insertPoint.insertAdjacentHTML('beforebegin', timeHtml);
+      }
+    } else {
+      // Hide time section
+      if (existingTime) existingTime.remove();
+    }
+    // Update pill active state
+    refreshSidebarMeta(id);
+  }
+
   showToast(task.trackTime ? 'Time tracking on' : 'Time tracking off');
 }
 

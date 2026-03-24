@@ -2418,6 +2418,25 @@
     padding: 4px 0;
     font-weight: 500;
   }
+  .time-add-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--accent-red);
+    background: transparent;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    color: var(--accent-red);
+    transition: all var(--transition);
+  }
+  .time-add-pill:hover {
+    background: var(--accent-red);
+    color: #fff;
+  }
   .time-add-btn:hover { text-decoration: underline; }
   .time-add-form {
     background: var(--bg);
