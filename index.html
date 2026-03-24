@@ -164,29 +164,25 @@
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
-      <button class="sort-date-btn" id="sortDateBtn" onclick="sortTodayByDate()" title="Sort by due date">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
-      </button>
-      <span class="section-count" id="todayCount"></span>
+      <button class="section-add-btn" onclick="openAddModal('today')" title="Add to today">+ Add</button>
     </div>
   </div>
   <div class="today-list" id="todayList"></div>
 
-  <!-- ADD TASK -->
-  <div class="add-task-box">
-    <div class="add-task-row">
-      <input type="text" class="add-task-input" id="addTaskInput" placeholder="Add a task…" />
-      <button class="add-task-btn" id="addTaskBtn">Add</button>
+  <!-- ADD TASK MODAL -->
+  <div class="add-modal-overlay" id="addModalOverlay" onclick="closeAddModal()"></div>
+  <div class="add-modal" id="addModal">
+    <div class="add-modal-header">
+      <span class="add-modal-title" id="addModalTitle">Add a task</span>
+      <button class="add-modal-close" onclick="closeAddModal()">✕</button>
     </div>
-    <div class="add-task-notes-wrap" id="addTaskNotesWrap">
-      <textarea class="add-task-notes" id="addTaskNotes" placeholder="Add notes…"></textarea>
-      <div style="display:flex;align-items:center;gap:6px;padding-top:6px;">
-        <button class="add-pill" id="addTaskListBtn" onclick="toggleAddTaskList()" style="height:24px;min-width:auto;font-size:11px;padding:0 10px;">☐ List</button>
-        <span style="font-size:10px;color:rgba(255,255,255,0.45);font-style:italic;">tasks default to 1 week out</span>
-      </div>
+    <input type="text" class="add-modal-input" id="addTaskInput" placeholder="What needs to be done?" autocomplete="off" />
+    <div class="add-modal-notes-wrap" id="addModalNotesWrap">
+      <textarea class="add-modal-notes" id="addTaskNotes" placeholder="Add notes…"></textarea>
     </div>
-    <div class="add-task-options" id="addTaskOptions"></div>
-    <input type="date" id="hiddenDatePicker" onchange="handleDatePick(this.value)" />
+    <div class="add-modal-pills" id="addModalPills"></div>
+    <div class="add-modal-actions" id="addModalActions"></div>
+    <input type="date" id="hiddenDatePicker" onchange="handleDatePick(this.value)" style="position:absolute;opacity:0;pointer-events:none;" />
   </div>
 
   <!-- PROJECTS -->
@@ -195,7 +191,7 @@
       <h2 class="section-title">Projects</h2>
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="section-count" id="projectsCount"></span>
-        <button class="section-add-btn" onclick="openAddProjectInline()" title="Add project">+ Add</button>
+        <button class="section-add-btn" onclick="openAddModal('project')" title="Add project">+ Add</button>
       </div>
     </div>
     <div id="projectsList"></div>
@@ -210,7 +206,7 @@
     <h2 class="section-title">On Deck <span style="font-size:10px; color:var(--text-muted); font-weight:400; font-style:italic; font-family:Inter,sans-serif; margin-left:4px; vertical-align:baseline;">[click to vote up]</span></h2>
     <div style="display:flex;align-items:center;gap:8px;">
       <span class="section-count" id="backlogCount"></span>
-      <button class="section-add-btn" onclick="focusAddTask()" title="Add task">+ Add</button>
+      <button class="section-add-btn" onclick="openAddModal('ondeck')" title="Add task">+ Add</button>
     </div>
   </div>
   <div class="backlog-list" id="backlogList"></div>

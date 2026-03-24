@@ -626,25 +626,12 @@ function getDefaultDueDate() {
   return d.toISOString().split('T')[0];
 }
 
+// Legacy alias — schedule popover and other code still calls this
 function renderAddTaskOptions() {
-  const el = document.getElementById('addTaskOptions');
-  let html = '';
-
-  // Combined date pill — defaults to 1 week out, click to change
-  const effectiveDate = store.selectedDueDate || getDefaultDueDate();
-  const dl = formatDueDate(effectiveDate);
-  const dateLabel = dl ? dl.text : effectiveDate;
-  const recurPart = store.selectedRecurring
-    ? ' · ↻ ' + (store.selectedRecurDays.length
-        ? store.selectedRecurDays.map(d => dayShort[d]).join(', ')
-        : store.selectedRecurring)
-    : '';
-  const isCustom = store.selectedDueDate || store.selectedRecurring || store.selectedRecurDays.length;
-  html += `<button class="add-pill ${isCustom ? 'active' : ''}" id="addTaskSchedBtn" onclick="openAddTaskSchedule(this)">${calIconSvg} ${dateLabel}${recurPart}</button>`;
-  html += `<button class="add-pill ${store.addTaskAsProject ? 'active' : ''}" onclick="toggleAddAsProject()">⏱ Project</button>`;
-  html += `<button class="add-pill" onclick="addTaskToDrawer()">${drawerIconSvg} Drawer</button>`;
-
-  el.innerHTML = html;
+  // Only render if modal is open
+  if (document.getElementById('addModal').classList.contains('open')) {
+    renderAddModalPills();
+  }
 }
 
 function updateCounts() {
@@ -782,26 +769,145 @@ function toggleKilled() {
 }
 
 // Add task
-document.getElementById('addTaskBtn').addEventListener('click', addTask);
-document.getElementById('addTaskInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') addTask();
-});
-// Accordion notes — opens when you start typing
-document.getElementById('addTaskInput').addEventListener('input', (e) => {
-  const wrap = document.getElementById('addTaskNotesWrap');
-  wrap.classList.toggle('open', e.target.value.trim().length > 0);
-});
-
+// ─── ADD TASK MODAL ───
+let addModalContext = 'ondeck';  // 'today', 'ondeck', 'project', 'drawer'
 let addTaskListMode = false;
 
-function toggleAddTaskList() {
+function openAddModal(context) {
+  addModalContext = context || 'ondeck';
+  store.addTaskAsProject = (context === 'project');
+  addTaskListMode = (context === 'project');  // auto-list mode for projects
+  store.selectedDueDate = null;
+  store.selectedRecurring = null;
+  store.selectedRecurDays = [];
+
+  const modal = document.getElementById('addModal');
+  const overlay = document.getElementById('addModalOverlay');
+  const input = document.getElementById('addTaskInput');
+  const titleEl = document.getElementById('addModalTitle');
+  const notesWrap = document.getElementById('addModalNotesWrap');
+  const notes = document.getElementById('addTaskNotes');
+
+  // Context-aware title and placeholder
+  if (context === 'project') {
+    titleEl.textContent = 'Add a project';
+    input.placeholder = 'Project name…';
+    notes.placeholder = 'Break it into steps…';
+    notesWrap.classList.add('open');  // auto-expand notes for projects
+    notes.value = '[ ] ';
+  } else if (context === 'today') {
+    titleEl.textContent = 'Add to Today';
+    input.placeholder = 'What needs to be done?';
+    notes.placeholder = 'Add notes…';
+    notesWrap.classList.remove('open');
+    notes.value = '';
+  } else {
+    titleEl.textContent = 'Add a task';
+    input.placeholder = 'What needs to be done?';
+    notes.placeholder = 'Add notes…';
+    notesWrap.classList.remove('open');
+    notes.value = '';
+  }
+
+  renderAddModalPills();
+  renderAddModalActions();
+  modal.classList.add('open');
+  overlay.classList.add('open');
+  setTimeout(() => input.focus(), 100);
+}
+
+function closeAddModal() {
+  document.getElementById('addModal').classList.remove('open');
+  document.getElementById('addModalOverlay').classList.remove('open');
+  // Reset state
+  const input = document.getElementById('addTaskInput');
+  input.value = '';
+  document.getElementById('addTaskNotes').value = '';
+  document.getElementById('addModalNotesWrap').classList.remove('open');
+  store.addTaskAsProject = false;
+  store.selectedDueDate = null;
+  store.selectedRecurring = null;
+  store.selectedRecurDays = [];
+  addTaskListMode = false;
+}
+
+function renderAddModalPills() {
+  const el = document.getElementById('addModalPills');
+
+  // Date pill
+  const effectiveDate = store.selectedDueDate || getDefaultDueDate();
+  const dl = formatDueDate(effectiveDate);
+  const dateLabel = dl ? dl.text : effectiveDate;
+  const recurPart = store.selectedRecurring
+    ? ' · ↻ ' + (store.selectedRecurDays.length
+        ? store.selectedRecurDays.map(d => dayShort[d]).join(', ')
+        : store.selectedRecurring)
+    : '';
+  const isCustomDate = store.selectedDueDate || store.selectedRecurring || store.selectedRecurDays.length;
+
+  let html = '';
+  html += `<button class="add-modal-pill ${isCustomDate ? 'active' : ''}" id="addTaskSchedBtn" onclick="openAddTaskSchedule(this)">${calIconSvg} ${dateLabel}${recurPart}</button>`;
+  html += `<button class="add-modal-pill ${store.addTaskAsProject ? 'active' : ''}" onclick="toggleAddAsProject()">⏱ Project</button>`;
+  html += `<button class="add-modal-pill ${addTaskListMode ? 'active' : ''}" onclick="toggleModalListMode()">☐ List</button>`;
+  html += `<span class="add-modal-hint">tasks default to 1 week out</span>`;
+
+  el.innerHTML = html;
+}
+
+function renderAddModalActions() {
+  const el = document.getElementById('addModalActions');
+  let html = '';
+
+  if (addModalContext === 'today') {
+    html += `<button class="add-modal-action-btn primary" onclick="addModalSubmit('today')">Add to Today</button>`;
+    html += `<button class="add-modal-action-btn" onclick="addModalSubmit('ondeck')">On Deck</button>`;
+    html += `<button class="add-modal-action-btn" onclick="addModalSubmit('drawer')">Drawer</button>`;
+  } else if (addModalContext === 'project') {
+    html += `<button class="add-modal-action-btn primary" onclick="addModalSubmit('ondeck')">Add Project</button>`;
+    html += `<button class="add-modal-action-btn" onclick="addModalSubmit('today')">Add to Today</button>`;
+  } else {
+    html += `<button class="add-modal-action-btn primary" onclick="addModalSubmit('ondeck')">Add to On Deck</button>`;
+    html += `<button class="add-modal-action-btn" onclick="addModalSubmit('today')">Today</button>`;
+    html += `<button class="add-modal-action-btn" onclick="addModalSubmit('drawer')">Drawer</button>`;
+  }
+
+  el.innerHTML = html;
+}
+
+function toggleAddAsProject() {
+  store.addTaskAsProject = !store.addTaskAsProject;
+  const input = document.getElementById('addTaskInput');
+  const titleEl = document.getElementById('addModalTitle');
+  const notesWrap = document.getElementById('addModalNotesWrap');
+  const notes = document.getElementById('addTaskNotes');
+
+  if (store.addTaskAsProject) {
+    titleEl.textContent = 'Add a project';
+    input.placeholder = 'Project name…';
+    if (!notesWrap.classList.contains('open')) {
+      notesWrap.classList.add('open');
+      if (!notes.value.trim()) {
+        notes.value = '[ ] ';
+        addTaskListMode = true;
+      }
+      notes.placeholder = 'Break it into steps…';
+    }
+  } else {
+    titleEl.textContent = addModalContext === 'today' ? 'Add to Today' : 'Add a task';
+    input.placeholder = 'What needs to be done?';
+    notes.placeholder = 'Add notes…';
+  }
+  renderAddModalPills();
+  renderAddModalActions();
+}
+
+function toggleModalListMode() {
   addTaskListMode = !addTaskListMode;
-  const btn = document.getElementById('addTaskListBtn');
-  btn.classList.toggle('active', addTaskListMode);
   const ta = document.getElementById('addTaskNotes');
+  const notesWrap = document.getElementById('addModalNotesWrap');
 
   if (addTaskListMode) {
-    // Convert existing lines to checklist
+    notesWrap.classList.add('open');
     const lines = ta.value.split('\n');
     ta.value = lines.map(l => {
       const trimmed = l.trim();
@@ -813,14 +919,72 @@ function toggleAddTaskList() {
     ta.focus();
     ta.selectionStart = ta.selectionEnd = ta.value.length;
   } else {
-    // Strip checklist prefixes
     const lines = ta.value.split('\n');
     ta.value = lines.map(l => l.replace(/^\[[ x]\] /, '')).join('\n');
     ta.focus();
   }
+  renderAddModalPills();
 }
 
-// Auto-add [ ] on Enter in list mode
+function addModalSubmit(destination) {
+  const input = document.getElementById('addTaskInput');
+  const title = input.value.trim();
+  if (!title) { input.focus(); return; }
+
+  const notes = document.getElementById('addTaskNotes').value.trim();
+  const isDrawer = (destination === 'drawer');
+  const dueDate = store.selectedDueDate || (isDrawer ? null : getDefaultDueDate());
+
+  const task = api.addTask(
+    title, '',
+    store.selectedRecurring,
+    [...store.selectedRecurDays],
+    dueDate,
+    isDrawer
+  );
+
+  task.notes = notes;
+
+  // Mark as project if toggled
+  if (store.addTaskAsProject) {
+    task.isProject = true;
+    if (!task.timeSessions) task.timeSessions = [];
+  }
+
+  // Vote up to Today if that's the destination
+  if (destination === 'today') {
+    if (!task.dueDate) task.dueDate = new Date().toISOString().split('T')[0];
+    api.voteUp(task.id);
+  }
+
+  closeAddModal();
+  render();
+
+  const label = task.isProject ? 'Project' : 'Task';
+  if (destination === 'today') showToast(`${label} added to Today`);
+  else if (isDrawer) { showToast(`${label} added to Drawer`); if (!store.drawerOpen) toggleDrawer(); }
+  else showToast(`${label} added to On Deck`);
+}
+
+// Keyboard shortcuts for the modal
+document.getElementById('addTaskInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    // Submit to primary destination
+    if (addModalContext === 'today') addModalSubmit('today');
+    else addModalSubmit('ondeck');
+  }
+  if (e.key === 'Escape') closeAddModal();
+});
+
+// Auto-expand notes when typing in the title
+document.getElementById('addTaskInput').addEventListener('input', (e) => {
+  const wrap = document.getElementById('addModalNotesWrap');
+  if (e.target.value.trim().length > 0 && !wrap.classList.contains('open') && !store.addTaskAsProject) {
+    // Don't auto-expand, user can click notes area or list pill
+  }
+});
+
+// Auto-add [ ] on Enter in list mode within notes
 document.getElementById('addTaskNotes').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && addTaskListMode) {
     e.preventDefault();
@@ -828,19 +992,25 @@ document.getElementById('addTaskNotes').addEventListener('keydown', (e) => {
     const pos = ta.selectionStart;
     const before = ta.value.substring(0, pos);
     const after = ta.value.substring(ta.selectionEnd);
-    // If current line is an empty checkbox, break out of list mode
     const lastLine = before.split('\n').pop();
     if (lastLine.trim() === '[ ]') {
-      // Remove the empty checkbox line
       const newBefore = before.substring(0, before.lastIndexOf('[ ]'));
       ta.value = newBefore + after;
       ta.selectionStart = ta.selectionEnd = newBefore.length;
       addTaskListMode = false;
-      document.getElementById('addTaskListBtn').classList.remove('active');
+      renderAddModalPills();
       return;
     }
     ta.value = before + '\n[ ] ' + after;
     ta.selectionStart = ta.selectionEnd = pos + 5;
+  }
+  if (e.key === 'Escape') closeAddModal();
+});
+
+// Close modal on Escape anywhere
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('addModal').classList.contains('open')) {
+    closeAddModal();
   }
 });
 
@@ -848,61 +1018,9 @@ function getAndClearAddNotes() {
   const el = document.getElementById('addTaskNotes');
   const notes = el.value.trim();
   el.value = '';
-  document.getElementById('addTaskNotesWrap').classList.remove('open');
+  document.getElementById('addModalNotesWrap').classList.remove('open');
   addTaskListMode = false;
-  document.getElementById('addTaskListBtn').classList.remove('active');
   return notes;
-}
-
-function addTask() {
-  const input = document.getElementById('addTaskInput');
-  const title = input.value.trim();
-  if (!title) return;
-  const dueDate = store.selectedDueDate || getDefaultDueDate();
-  const task = api.addTask(
-    title,
-    '',
-    store.selectedRecurring,
-    [...store.selectedRecurDays],
-    dueDate
-  );
-  task.notes = getAndClearAddNotes();
-  // If Project pill is active, mark as project
-  if (store.addTaskAsProject) {
-    task.isProject = true;
-    if (!task.timeSessions) task.timeSessions = [];
-    store.addTaskAsProject = false;
-  }
-  input.value = '';
-  input.placeholder = 'Add a task…';
-  store.selectedDueDate = null;
-  store.selectedRecurring = null;
-  store.selectedRecurDays = [];
-  render();
-  showToast(task.isProject ? 'Project added to On Deck' : 'Added to On Deck');
-}
-
-function toggleAddAsProject() {
-  store.addTaskAsProject = !store.addTaskAsProject;
-  const input = document.getElementById('addTaskInput');
-  input.placeholder = store.addTaskAsProject ? 'Add a project…' : 'Add a task…';
-  renderAddTaskOptions();
-}
-
-function openAddProjectInline() {
-  // Focus the main add-task input with Project pill pre-activated
-  store.addTaskAsProject = true;
-  renderAddTaskOptions();
-  const input = document.getElementById('addTaskInput');
-  input.focus();
-  input.placeholder = 'Add a project…';
-  // Reset placeholder when project toggle is turned off or task is added
-}
-
-function focusAddTask() {
-  const input = document.getElementById('addTaskInput');
-  input.focus();
-  input.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function addTaskToToday() {
@@ -1721,14 +1839,14 @@ function renderSchedulePopover() {
     const todayStr = new Date().toISOString().split('T')[0];
     const isAddTask = schedulePopoverTaskId === -1;
     if (isAddTask) {
-      // For add-task popover, set the date to today
+      // For add-task popover, set the date to today and submit
       task.dueDate = todayStr;
       closeSchedulePopover();
       const input = document.getElementById('addTaskInput');
       if (input && input.value.trim()) {
-        addTaskToToday();
+        addModalSubmit('today');
       } else {
-        renderAddTaskOptions();
+        renderAddModalPills();
       }
     } else {
       task.dueDate = todayStr;
