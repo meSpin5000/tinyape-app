@@ -487,7 +487,9 @@ function renderProjectsList() {
       : '';
 
     const totalMins = (t.timeSessions || []).reduce((sum, s) => sum + s.minutes, 0);
-    const timeHtml = totalMins ? `<span style="font-size:10px;color:var(--text-muted);">⏱ ${formatMinutes(totalMins)}</span>` : '';
+    const timeHtml = totalMins
+      ? `<span class="project-time-link" onclick="openNotesSidebar(${t.id})" title="View time log">⏱ ${formatMinutes(totalMins)}</span>`
+      : `<span class="project-time-link muted" onclick="openNotesSidebar(${t.id})" title="Log time">⏱ track</span>`;
 
     const due = formatDueDate(t.dueDate);
     const dateBtn = due
@@ -498,12 +500,12 @@ function renderProjectsList() {
       : '';
 
     return `
-      <div class="today-item" data-id="${t.id}">
+      <div class="today-item project-row" data-id="${t.id}">
         <span class="today-number">${idx + 1}</span>
         <div class="checkbox" onclick="handleProjectComplete(${t.id})"></div>
         <div class="task-content">
           <div class="task-title task-title-clickable" onclick="openNotesSidebar(${t.id})">
-            ${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}<span class="project-indicator">⏱</span>${recurInline}
+            ${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${recurInline}
           </div>
         </div>
         ${progressHtml}
@@ -2075,7 +2077,7 @@ function openNotesSidebar(id, anchorEl) {
     closeNotesCard();
     return;
   }
-  closeNotesCard();
+  closeNotesCard(true);  // skip render — we'll open a new card immediately
 
   const task = store.tasks.find(t => t.id === id);
   if (!task) return;
@@ -2190,7 +2192,7 @@ function autoGrowTextarea(el) {
   el.style.height = Math.max(60, el.scrollHeight) + 'px';
 }
 
-function closeNotesCard() {
+function closeNotesCard(skipRender) {
   if (notesCardEl && currentNotesTaskId !== null) {
     // Save contenteditable content before destroying the card
     const editable = notesCardEl.querySelector('#notesEditable');
@@ -2203,7 +2205,7 @@ function closeNotesCard() {
   }
   currentNotesTaskId = null;
   document.removeEventListener('click', handleNotesCardOutside);
-  render();
+  if (!skipRender) render();
 }
 
 function handleNotesCardOutside(e) {
