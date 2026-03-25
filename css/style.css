@@ -2640,11 +2640,11 @@
   }
   .hof-entry-silver .hof-rank,
   .hof-entry-silver .hof-count {
-    color: #F5E6C8;
+    color: #c0c0c0;
   }
   .hof-entry-bronze .hof-rank,
   .hof-entry-bronze .hof-count {
-    color: #F5E6C8;
+    color: #cd7f32;
   }
   .hof-plaque {
     background:
@@ -2654,50 +2654,35 @@
         rgba(0,0,0,0.02) 1px,
         rgba(255,255,255,0.01) 2px,
         transparent 3px,
-        transparent 5px
+        transparent 6px
       ),
-      repeating-linear-gradient(
-        170deg,
-        transparent 0px,
-        rgba(255,255,255,0.02) 8px,
-        rgba(0,0,0,0.04) 10px,
-        transparent 12px,
-        transparent 20px
-      ),
-      repeating-linear-gradient(
-        178deg,
-        transparent 0px,
-        rgba(0,0,0,0.06) 15px,
-        transparent 16px,
-        transparent 35px
-      ),
-      linear-gradient(165deg, #5C3A1E 0%, #3E2210 25%, #4A2A14 40%, #3A1E0C 60%, #4E2E16 75%, #2E1808 100%);
-    border: 2px solid #6B4226;
+      linear-gradient(165deg, #3a3a3a 0%, #2a2a2a 25%, #323232 40%, #252525 60%, #2e2e2e 75%, #1e1e1e 100%);
+    border: 1.5px solid #4a4a4a;
     border-radius: 6px;
     padding: 12px 14px;
-    box-shadow: 0 3px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.2);
+    box-shadow: 0 3px 12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.3);
     position: relative;
   }
   .hof-plaque::before {
     content: '';
     position: absolute;
     inset: 3px;
-    border: 1px solid rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.04);
     border-radius: 4px;
     pointer-events: none;
   }
   .hof-plaque .hof-header {
     color: #D4A84B;
-    border-bottom-color: rgba(212,168,75,0.3);
+    border-bottom-color: rgba(212,168,75,0.25);
   }
   .hof-plaque .hof-count {
-    color: #F5E6C8;
+    color: #e8e0d4;
   }
   .hof-plaque .hof-date {
-    color: #A08060;
+    color: #8a8a8a;
   }
   .hof-plaque .hof-rank {
-    color: #C8A060;
+    color: #b0a090;
   }
   .hof-entry-gold .hof-rank,
   .hof-entry-gold .hof-count {
@@ -2706,11 +2691,9 @@
   }
   [data-theme="dark"] .hof-plaque {
     background:
-      repeating-linear-gradient(175deg, rgba(255,255,255,0.02) 0px, rgba(0,0,0,0.02) 1px, transparent 2px, transparent 5px),
-      repeating-linear-gradient(170deg, transparent 0px, rgba(255,255,255,0.015) 8px, rgba(0,0,0,0.03) 10px, transparent 12px, transparent 20px),
-      repeating-linear-gradient(178deg, transparent 0px, rgba(0,0,0,0.05) 15px, transparent 16px, transparent 35px),
-      linear-gradient(165deg, #4A2E16 0%, #321A0A 25%, #3E2210 40%, #2E1808 60%, #3A2210 75%, #241208 100%);
-    border-color: #5A3620;
+      repeating-linear-gradient(175deg, rgba(255,255,255,0.02) 0px, rgba(0,0,0,0.02) 1px, transparent 2px, transparent 6px),
+      linear-gradient(165deg, #2e2e2e 0%, #1e1e1e 25%, #262626 40%, #1a1a1a 60%, #242424 75%, #161616 100%);
+    border-color: #3a3a3a;
   }
 
   .hof-entry-live .hof-count {
@@ -2723,11 +2706,11 @@
     opacity: 0.85;
   }
   .hof-entry-empty .hof-rank {
-    color: #6B5030;
+    color: #666;
     opacity: 0.5;
   }
   .hof-entry-empty .hof-count {
-    color: #6B5030;
+    color: #666;
     opacity: 0.4;
     font-style: italic;
     font-weight: 400;

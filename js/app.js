@@ -886,9 +886,25 @@ function openAddModal(context) {
 }
 
 function closeAddModal() {
+  // If there's a title, auto-save to the contextual default destination
+  // so the user doesn't lose their work when closing via X or overlay.
+  const input = document.getElementById('addTaskInput');
+  const title = input.value.trim();
+  if (title) {
+    const defaultDest = addModalContext === 'today' ? 'today'
+      : addModalContext === 'project' ? 'ondeck'
+      : 'ondeck';
+    addModalSubmit(defaultDest);
+    return; // addModalSubmit calls closeAddModal internally after resetting
+  }
+
+  _resetAddModal();
+}
+
+// Internal reset — separates modal cleanup from the close-with-save logic
+function _resetAddModal() {
   document.getElementById('addModal').classList.remove('open');
   document.getElementById('addModalOverlay').classList.remove('open');
-  // Reset state
   const input = document.getElementById('addTaskInput');
   input.value = '';
   clearModalNotes();
@@ -898,7 +914,6 @@ function closeAddModal() {
   const trackSection = document.getElementById('addModalTrackSection');
   if (trackSection) {
     trackSection.style.display = 'none';
-    // Reset track form values
     const slider = document.getElementById('addTrackSlider');
     const sliderLabel = document.getElementById('addTrackSliderLabel');
     const note = document.getElementById('addTrackNote');
@@ -1069,7 +1084,7 @@ function addModalSubmit(destination) {
     api.voteUp(task.id);
   }
 
-  closeAddModal();
+  _resetAddModal();
   render();
 
   const label = task.isProject ? 'Project' : 'Task';
