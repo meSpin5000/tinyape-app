@@ -934,8 +934,10 @@ function _resetAddModal() {
 function renderAddModalPills() {
   const el = document.getElementById('addModalPills');
 
-  // Date pill
-  const effectiveDate = store.selectedDueDate || getDefaultDueDate();
+  // Date pill — default to today when adding from Today context
+  const isTodayCtx = addModalContext === 'today';
+  const defaultDate = isTodayCtx ? new Date().toISOString().split('T')[0] : getDefaultDueDate();
+  const effectiveDate = store.selectedDueDate || defaultDate;
   const dl = formatDueDate(effectiveDate);
   const dateLabel = dl ? dl.text : effectiveDate;
   const recurPart = store.selectedRecurring ? ' · ↻' : '';
@@ -946,7 +948,7 @@ function renderAddModalPills() {
   html += `<button class="add-modal-pill ${store.addTaskTrackTime ? 'active' : ''}" onclick="toggleAddTrackTime()">${trackIconSvg} Track</button>`;
   html += `<button class="add-modal-pill ${store.addTaskAsProject ? 'active' : ''}" onclick="toggleAddAsProject()">${projectIconSvg} Project</button>`;
   html += `<button class="add-modal-pill ${addTaskListMode ? 'active' : ''}" onclick="toggleModalListMode()">${checkboxIconSvg} List</button>`;
-  html += `<span class="add-modal-hint">if not specified, tasks default to one week out</span>`;
+  if (!isTodayCtx) html += `<span class="add-modal-hint">if not specified, tasks default to one week out</span>`;
 
   el.innerHTML = html;
 }
@@ -967,9 +969,9 @@ function renderAddModalActions() {
 
   let html = '';
   buttons.forEach(b => {
-    const isPrimary = b.dest === primaryCtx;
-    html += `<button class="add-modal-action-btn${isPrimary ? ' primary' : ''}" onclick="addModalSubmit('${b.dest}')">${b.label}</button>`;
+    html += `<button class="add-modal-action-btn" onclick="addModalSubmit('${b.dest}')">${b.label}</button>`;
   });
+  html += `<button class="add-modal-action-btn primary" onclick="addModalSubmit('${primaryCtx}')">OK</button>`;
 
   el.innerHTML = html;
 }
@@ -1045,7 +1047,9 @@ function addModalSubmit(destination) {
 
   const notes = getModalNotesText().trim();
   const isDrawer = (destination === 'drawer');
-  const dueDate = store.selectedDueDate || (isDrawer ? null : getDefaultDueDate());
+  const isToday = (destination === 'today');
+  const todayStr = new Date().toISOString().split('T')[0];
+  const dueDate = isToday ? (store.selectedDueDate || todayStr) : store.selectedDueDate || (isDrawer ? null : getDefaultDueDate());
 
   const task = api.addTask(
     title, '',
