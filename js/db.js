@@ -434,6 +434,7 @@ window.TinyApeDB = {
       }
 
       const catData = {
+        key: category.key,
         label: category.label,
         color: category.color,
         user_id: userId
