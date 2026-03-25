@@ -443,7 +443,8 @@ async function refreshFromSupabase() {
       if (data.completionLog) {
         completionLog.length = 0;
         data.completionLog.forEach(e => {
-          completionLog.push({ ts: e.createdAt || e.created_at });
+          const ts = e.ts || e.createdAt || e.created_at;
+          if (ts) completionLog.push({ ts });
         });
       }
 

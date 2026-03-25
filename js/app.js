@@ -722,7 +722,7 @@ function handleProjectComplete(id) {
     row.classList.add('fade-out');
     setTimeout(() => {
       api.toggleDone(id);
-      render();
+      try { render(); } catch(e) { console.error('render error:', e); }
       try { bumpCounter(); } catch(e) { console.error('bumpCounter error:', e); }
       try { spawnCreature(); } catch(e) { console.error('spawnCreature error:', e); }
       showToast('Project complete! 🎉');
@@ -746,7 +746,7 @@ function handleToggleDone(id) {
     row.classList.add('fade-out');
     setTimeout(() => {
       api.toggleDone(id);
-      render();
+      try { render(); } catch(e) { console.error('render error:', e); }
       try { bumpCounter(); } catch(e) { console.error('bumpCounter error:', e); }
       try { spawnCreature(); } catch(e) { console.error('spawnCreature error:', e); }
       // Notify about recurring respawn
@@ -2297,25 +2297,60 @@ function openNotesSidebar(id, anchorEl) {
   const editable = card.querySelector('#notesEditable');
   editable.addEventListener('input', () => saveCurrentNotes());
   editable.addEventListener('keydown', handleNotesKeydown);
+  // Safety net: if user types while cursor is before a checkbox, move it first
+  editable.addEventListener('beforeinput', function(e) {
+    if (e.inputType !== 'insertText' && e.inputType !== 'insertParagraph') return;
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const node = sel.getRangeAt(0).startContainer;
+    const inTextSpan = node.nodeType === Node.TEXT_NODE
+      ? node.parentElement.closest('.notes-line-text')
+      : node.closest && node.closest('.notes-line-text');
+    if (!inTextSpan) {
+      const firstSpan = editable.querySelector('.notes-line-text');
+      if (firstSpan) {
+        e.preventDefault();
+        const range = document.createRange();
+        range.selectNodeContents(firstSpan);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        // Re-insert the character at the corrected position
+        if (e.inputType === 'insertText' && e.data) {
+          document.execCommand('insertText', false, e.data);
+        }
+      }
+    }
+  });
   // On focus (including Tab), if content starts with a checklist line,
-  // defer cursor placement so the browser's default focus lands, then fix it
+  // force cursor into the first text span so it never lands before a checkbox.
+  // Use multiple timing attempts because browsers finalize focus position
+  // at unpredictable times (rAF alone is not reliable).
   editable.addEventListener('focus', function onEditableFocus() {
     const firstChild = editable.firstElementChild;
     if (firstChild && firstChild.classList.contains('notes-line')) {
-      // Use requestAnimationFrame so we override AFTER the browser places cursor
-      requestAnimationFrame(() => {
+      const fixCursor = () => {
         const sel = window.getSelection();
         if (!sel.rangeCount) return;
         const r = sel.getRangeAt(0);
-        // If cursor landed before or on a checkbox input, fix it
         const node = r.startContainer;
         const inTextSpan = node.nodeType === Node.TEXT_NODE
           ? node.parentElement.closest('.notes-line-text')
           : node.closest && node.closest('.notes-line-text');
         if (!inTextSpan) {
-          placeCursorAfterCheckbox(editable);
+          const firstSpan = editable.querySelector('.notes-line-text');
+          if (firstSpan) {
+            const range = document.createRange();
+            range.selectNodeContents(firstSpan);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
         }
-      });
+      };
+      requestAnimationFrame(fixCursor);
+      setTimeout(fixCursor, 0);
+      setTimeout(fixCursor, 20);
     }
   });
   setTimeout(() => {
@@ -3947,6 +3982,7 @@ function computeHofData() {
   // Count by day
   const dayCounts = {};
   completionLog.forEach(e => {
+    if (!e.ts) return;
     const day = e.ts.split('T')[0];
     dayCounts[day] = (dayCounts[day] || 0) + 1;
   });
@@ -3970,6 +4006,7 @@ function computeHofData() {
   // Count by week (Mon–Sun)
   const weekCounts = {};
   completionLog.forEach(e => {
+    if (!e.ts) return;
     const d = new Date(e.ts);
     const mon = getMonday(d);
     const key = mon.toISOString().split('T')[0];
