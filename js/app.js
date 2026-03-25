@@ -35,11 +35,21 @@ const api = {
     return store.tasks
       .filter(t => t.isProject && !t.today && !t.done && !t.drawer)
       .sort((a, b) => {
+        // Sort by user-defined projectOrder first, then by due date
+        const ao = a.projectOrder != null ? a.projectOrder : 9999;
+        const bo = b.projectOrder != null ? b.projectOrder : 9999;
+        if (ao !== bo) return ao - bo;
         if (a.dueDate && !b.dueDate) return -1;
         if (!a.dueDate && b.dueDate) return 1;
         if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
         return 0;
       });
+  },
+  reorderProjects(orderedIds) {
+    orderedIds.forEach((id, i) => {
+      const task = store.tasks.find(t => t.id === id);
+      if (task) task.projectOrder = i + 1;
+    });
   },
   getBacklogTasks() {
     return store.tasks
@@ -122,7 +132,7 @@ const api = {
       if (!t.drawer || t.done || t.today || !t.dueDate) return;
       const due = new Date(t.dueDate + 'T00:00:00');
       const days = Math.round((due - now) / (1000*60*60*24));
-      if (days <= 14) {
+      if (days <= 30) {
         t.drawer = false;
         surfaced.push(t);
       }
@@ -205,11 +215,11 @@ const api = {
   },
   _respawnRecurring(original) {
     const nextDate = this._getNextRecurDate(original);
-    // Route to drawer if next occurrence is 14+ days out
+    // Route to drawer if next occurrence is 30+ days out
     const now = new Date(); now.setHours(0,0,0,0);
     const nextD = nextDate ? new Date(nextDate + 'T00:00:00') : null;
     const daysOut = nextD ? Math.round((nextD - now) / (1000*60*60*24)) : 0;
-    const toDrawer = daysOut >= 14;
+    const toDrawer = daysOut >= 30;
     const newTask = {
       id: store.nextId++,
       title: original.title,
@@ -352,7 +362,7 @@ function formatRecurring(task) {
 }
 
 function render() {
-  // Auto-surface drawer tasks that are now within 14 days
+  // Auto-surface drawer tasks that are now within 30 days
   const surfaced = api.surfaceDrawerTasks();
   if (surfaced.length) {
     surfaced.forEach(t => showToast(`"${t.title}" surfaced from Drawer`));
@@ -506,6 +516,7 @@ function renderProjectsList() {
 
     return `
       <div class="today-item project-row" data-id="${t.id}">
+        <span class="drag-handle" title="Drag to reorder">⠿</span>
         <span class="today-number">${idx + 1}</span>
         <div class="checkbox" onclick="handleProjectComplete(${t.id})"></div>
         <div class="task-content">
@@ -712,8 +723,8 @@ function handleProjectComplete(id) {
     setTimeout(() => {
       api.toggleDone(id);
       render();
-      bumpCounter();
-      spawnCreature();
+      try { bumpCounter(); } catch(e) { console.error('bumpCounter error:', e); }
+      try { spawnCreature(); } catch(e) { console.error('spawnCreature error:', e); }
       showToast('Project complete! 🎉');
     }, 350);
   }, 1000);
@@ -736,13 +747,17 @@ function handleToggleDone(id) {
     setTimeout(() => {
       api.toggleDone(id);
       render();
-      bumpCounter();
-      spawnCreature();
-      // Check if recurring respawn went to the drawer
+      try { bumpCounter(); } catch(e) { console.error('bumpCounter error:', e); }
+      try { spawnCreature(); } catch(e) { console.error('spawnCreature error:', e); }
+      // Notify about recurring respawn
       if (wasRecurring) {
-        const respawned = store.tasks.find(t => t.title === task.title && t.drawer && !t.done && t.id !== id);
+        const respawned = store.tasks.find(t => t.title === task.title && !t.done && t.id !== id);
         if (respawned) {
-          showToast(`↻ Next "${respawned.title}" filed to Drawer`);
+          if (respawned.drawer) {
+            showToast(`↻ Next "${respawned.title}" filed to Drawer`);
+          } else {
+            showToast(`↻ "${respawned.title}" respawned to On Deck`);
+          }
         }
       }
     }, 350);
@@ -1565,7 +1580,7 @@ function renderDrawer() {
       <span class="drawer-item-title" onclick="openNotesSidebar(${t.id})" title="Click to open">${t.title}${notesIcon}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurIcon}</span>
       ${dateMeta}
       <div class="drawer-item-actions">
-        <button onclick="handleDrawerMoveToOnDeck(${t.id})" title="Move to On Deck">↑</button>
+        <button class="drawer-up-btn" onclick="handleDrawerMoveToOnDeck(${t.id})" title="Move to On Deck"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="13" x2="8" y2="3"/><polyline points="3,7 8,2 13,7"/></svg></button>
         <button onclick="handleDrawerTrash(${t.id})" title="Delete">✕</button>
       </div>
     </div>`;
@@ -1841,11 +1856,18 @@ function renderSchedulePopover() {
   // Wire up events
   pop.querySelector('#schedClose').addEventListener('click', closeSchedulePopover);
 
-  // Calendar day clicks
+  // Calendar day clicks — set date and auto-close
   pop.querySelectorAll('.sched-day:not(.empty):not(.past)').forEach(btn => {
     btn.addEventListener('click', () => {
       task.dueDate = btn.dataset.date;
-      renderSchedulePopover();
+      const isAddTask = schedulePopoverTaskId === -1;
+      closeSchedulePopover();
+      if (isAddTask) {
+        renderAddModalPills();
+      } else {
+        render();
+        if (currentNotesTaskId === task.id) refreshSidebarMeta();
+      }
     });
   });
 
@@ -2275,18 +2297,25 @@ function openNotesSidebar(id, anchorEl) {
   const editable = card.querySelector('#notesEditable');
   editable.addEventListener('input', () => saveCurrentNotes());
   editable.addEventListener('keydown', handleNotesKeydown);
-  // On focus (including Tab), place cursor after last checkbox text, not before checkbox
+  // On focus (including Tab), if content starts with a checklist line,
+  // defer cursor placement so the browser's default focus lands, then fix it
   editable.addEventListener('focus', function onEditableFocus() {
-    const firstLine = editable.querySelector('.notes-line');
-    if (firstLine && editable === document.activeElement) {
-      // Only reposition if cursor is at position 0 (default focus landing)
-      const sel = window.getSelection();
-      if (sel.rangeCount) {
+    const firstChild = editable.firstElementChild;
+    if (firstChild && firstChild.classList.contains('notes-line')) {
+      // Use requestAnimationFrame so we override AFTER the browser places cursor
+      requestAnimationFrame(() => {
+        const sel = window.getSelection();
+        if (!sel.rangeCount) return;
         const r = sel.getRangeAt(0);
-        if (r.startOffset === 0 && (r.startContainer === editable || r.startContainer === firstLine)) {
+        // If cursor landed before or on a checkbox input, fix it
+        const node = r.startContainer;
+        const inTextSpan = node.nodeType === Node.TEXT_NODE
+          ? node.parentElement.closest('.notes-line-text')
+          : node.closest && node.closest('.notes-line-text');
+        if (!inTextSpan) {
           placeCursorAfterCheckbox(editable);
         }
-      }
+      });
     }
   });
   setTimeout(() => {
@@ -2850,16 +2879,19 @@ let dragOffsetY = 0;
 let dragHasMoved = false;
 let dragOrder = [];   // current visual order of task IDs
 let dragItemH = 0;
+let dragListId = 'todayList'; // which list is being dragged in
 
-function startDrag(item, startY) {
+function startDrag(item, startY, listId) {
   dragItem = item;
   dragStartY = startY;
   dragOffsetY = 0;
   dragHasMoved = false;
   dragItemH = item.offsetHeight;
+  dragListId = listId || 'todayList';
 
-  // Snapshot current order
-  dragOrder = [...document.querySelectorAll('.today-item:not(.done)')].map(el => parseInt(el.dataset.id));
+  // Snapshot current order from the correct list
+  const container = document.getElementById(dragListId);
+  dragOrder = [...container.querySelectorAll('.today-item, .project-row')].map(el => parseInt(el.dataset.id));
 
   dragItem.classList.add('dragging');
 }
@@ -2873,7 +2905,8 @@ function moveDrag(clientY) {
   dragItem.style.transform = `translateY(${dragOffsetY}px)`;
 
   // Figure out how many positions we've crossed
-  const items = [...document.querySelectorAll('.today-item:not(.done)')];
+  const container = document.getElementById(dragListId);
+  const items = [...container.querySelectorAll('.today-item, .project-row')];
   const dragIdx = items.indexOf(dragItem);
   const positions = Math.round(dragOffsetY / dragItemH);
   const targetIdx = Math.max(0, Math.min(items.length - 1, dragIdx + positions));
@@ -2896,7 +2929,8 @@ function endDrag() {
   if (!dragItem) return;
 
   // Calculate final position
-  const items = [...document.querySelectorAll('.today-item:not(.done)')];
+  const container = document.getElementById(dragListId);
+  const items = [...container.querySelectorAll('.today-item, .project-row')];
   const dragIdx = items.indexOf(dragItem);
   const positions = Math.round(dragOffsetY / dragItemH);
   const targetIdx = Math.max(0, Math.min(items.length - 1, dragIdx + positions));
@@ -2928,40 +2962,50 @@ function endDrag() {
 function onMouseMove(e) { e.preventDefault(); moveDrag(e.clientY); }
 function onMouseUp() { endDrag(); }
 
-document.getElementById('todayList').addEventListener('mousedown', (e) => {
-  if (!e.target.closest('.drag-handle')) return;
-  const item = e.target.closest('.today-item:not(.done)');
-  if (!item) return;
-  e.preventDefault();
-  startDrag(item, e.clientY);
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
-});
+// Drag setup helper for any sortable list
+function setupDragList(listId) {
+  const el = document.getElementById(listId);
+  if (!el) return;
+  el.addEventListener('mousedown', (e) => {
+    if (!e.target.closest('.drag-handle')) return;
+    const item = e.target.closest('.today-item, .project-row');
+    if (!item) return;
+    e.preventDefault();
+    startDrag(item, e.clientY, listId);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+  el.addEventListener('touchstart', (e) => {
+    if (!e.target.closest('.drag-handle')) return;
+    const item = e.target.closest('.today-item, .project-row');
+    if (!item) return;
+    startDrag(item, e.touches[0].clientY, listId);
+  }, { passive: true });
+  el.addEventListener('touchmove', (e) => {
+    if (!dragItem) return;
+    e.preventDefault();
+    moveDrag(e.touches[0].clientY);
+  }, { passive: false });
+  el.addEventListener('touchend', () => {
+    if (dragItem) endDrag();
+  });
+}
 
-// Touch support
-document.getElementById('todayList').addEventListener('touchstart', (e) => {
-  if (!e.target.closest('.drag-handle')) return;
-  const item = e.target.closest('.today-item:not(.done)');
-  if (!item) return;
-  startDrag(item, e.touches[0].clientY);
-}, { passive: true });
-
-document.getElementById('todayList').addEventListener('touchmove', (e) => {
-  if (!dragItem) return;
-  e.preventDefault();
-  moveDrag(e.touches[0].clientY);
-}, { passive: false });
-
-document.getElementById('todayList').addEventListener('touchend', () => {
-  if (dragItem) endDrag();
-});
+setupDragList('todayList');
+setupDragList('projectsList');
 
 function saveOrder() {
-  const items = [...document.querySelectorAll('.today-item:not(.done)')];
+  const container = document.getElementById(dragListId);
+  const items = [...container.querySelectorAll('.today-item, .project-row')];
   const ids = items.map(el => parseInt(el.dataset.id));
-  api.reorderToday(ids);
+  if (dragListId === 'projectsList') {
+    api.reorderProjects(ids);
+  } else {
+    api.reorderToday(ids);
+  }
   items.forEach((el, i) => {
-    el.querySelector('.today-number').textContent = i + 1;
+    const numEl = el.querySelector('.today-number');
+    if (numEl) numEl.textContent = i + 1;
   });
 }
 

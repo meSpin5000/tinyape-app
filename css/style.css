@@ -1869,6 +1869,14 @@
     background: var(--bg-secondary);
     color: var(--text);
   }
+  .drawer-up-btn svg {
+    width: 13px;
+    height: 13px;
+    display: block;
+  }
+  .drawer-up-btn:hover {
+    color: var(--accent-red) !important;
+  }
   .drawer-empty {
     font-size: 12px;
     color: var(--text-muted);
@@ -2303,7 +2311,7 @@
   .notes-card-pills {
     display: flex;
     gap: 5px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
   .notes-card-pill {
     display: inline-flex;

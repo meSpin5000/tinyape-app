@@ -245,6 +245,19 @@
       };
     }
 
+    // ─── Patch reorderProjects (drag version) ───
+    if (api.reorderProjects) {
+      const _origReorderProjects = api.reorderProjects.bind(api);
+      api.reorderProjects = function(orderedIds) {
+        _origReorderProjects(orderedIds);
+        // Persist all project tasks with updated order
+        orderedIds.forEach(id => {
+          const task = store.tasks.find(t => t.id === id);
+          if (task) persistTask(task);
+        });
+      };
+    }
+
     // ─── Patch addDrawerCategory ───
     const _origAddCat = api.addDrawerCategory.bind(api);
     api.addDrawerCategory = function(key, label, color) {

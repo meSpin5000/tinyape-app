@@ -52,6 +52,7 @@ window.TinyApeDB = {
       drawerCategory: dbTask.drawer_category,
       isProject: dbTask.is_project,
       trackTime: dbTask.track_time || false,
+      projectOrder: dbTask.project_order,
       timeSessions: dbTask.time_sessions || [],
       killedAt: dbTask.killed_at,
       createdAt: dbTask.created_at,
@@ -84,6 +85,7 @@ window.TinyApeDB = {
       drawer_category: jsTask.drawerCategory,
       is_project: jsTask.isProject,
       track_time: jsTask.trackTime || false,
+      project_order: jsTask.projectOrder,
       time_sessions: jsTask.timeSessions,
       killed_at: jsTask.killedAt,
       user_id: jsTask.userId
