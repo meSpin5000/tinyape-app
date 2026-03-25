@@ -1118,7 +1118,8 @@ document.getElementById('addTaskNotes').addEventListener('keydown', (e) => {
     // Insert a new checkbox line
     const newLine = document.createElement('div');
     newLine.className = 'notes-line';
-    newLine.innerHTML = '<span class="cb-visual" contenteditable="false" onclick="handleInlineCheck(this)"></span><span class="notes-line-text">\u200B</span>';
+    newLine.contentEditable = 'false';
+    newLine.innerHTML = '<span class="cb-visual" onclick="handleInlineCheck(this)"></span><span class="notes-line-text" contenteditable="true">\u200B</span>';
     // Insert after current line or at end
     if (line && line.nextSibling) {
       el.insertBefore(newLine, line.nextSibling);
@@ -2600,8 +2601,10 @@ function cardVoteUp(id) {
 
 // Convert task.notes plain text → HTML for contenteditable
 // Uses <span> for checkboxes instead of <input> to prevent browser
-// Tab focus from landing before checkbox elements (the root cause of
-// the persistent cursor-before-checkbox bug).
+// Tab focus from landing before checkbox elements.
+// Each .notes-line is contenteditable="false" with only .notes-line-text
+// set to contenteditable="true" — this makes it structurally impossible
+// for the caret to land between the checkbox and the text.
 function notesTextToHtml(text) {
   if (!text) return '';
   const lines = text.split('\n');
@@ -2610,10 +2613,10 @@ function notesTextToHtml(text) {
     const checked = line.match(/^\[x\] (.*)$/);
     if (unchecked) {
       const txt = escHtml(unchecked[1]) || '\u200B';
-      return `<div class="notes-line"><span class="cb-visual" contenteditable="false" onclick="handleInlineCheck(this)"></span><span class="notes-line-text">${txt}</span></div>`;
+      return `<div class="notes-line" contenteditable="false"><span class="cb-visual" onclick="handleInlineCheck(this)"></span><span class="notes-line-text" contenteditable="true">${txt}</span></div>`;
     } else if (checked) {
       const txt = escHtml(checked[1]) || '\u200B';
-      return `<div class="notes-line checked"><span class="cb-visual checked" contenteditable="false" onclick="handleInlineCheck(this)"></span><span class="notes-line-text">${txt}</span></div>`;
+      return `<div class="notes-line checked" contenteditable="false"><span class="cb-visual checked" onclick="handleInlineCheck(this)"></span><span class="notes-line-text" contenteditable="true">${txt}</span></div>`;
     } else {
       return `<div>${escHtml(line) || '<br>'}</div>`;
     }
@@ -2744,12 +2747,13 @@ function handleNotesKeydown(e) {
 
   const newLine = document.createElement('div');
   newLine.className = 'notes-line';
+  newLine.contentEditable = 'false';
   const newCb = document.createElement('span');
   newCb.className = 'cb-visual';
-  newCb.contentEditable = 'false';
   newCb.onclick = function() { handleInlineCheck(this); };
   const newTextSpan = document.createElement('span');
   newTextSpan.className = 'notes-line-text';
+  newTextSpan.contentEditable = 'true';
   // Use a zero-width space if empty so cursor can land in the span
   newTextSpan.textContent = after || '\u200B';
   newLine.appendChild(newCb);
