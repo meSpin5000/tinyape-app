@@ -370,7 +370,7 @@ async function loadAndShowApp() {
   document.getElementById('loginPage').style.display = 'none';
   document.getElementById('loadingPage').style.display = 'flex';
 
-  await refreshFromSupabase();
+  await refreshFromSupabase(true);  // force on initial load
 
   // Seed default drawer categories for new users
   if (Object.keys(store.drawerCategories).length === 0) {
@@ -400,8 +400,15 @@ async function loadAndShowApp() {
 // 1. Flushes any pending writes (failed saves) to Supabase first
 // 2. Pulls latest state from Supabase
 // 3. Preserves any local-only tasks that haven't been saved yet
-async function refreshFromSupabase() {
+async function refreshFromSupabase(force) {
   try {
+    // Don't pull from DB if we have in-flight saves or recent mutations
+    // (prevents overwriting local state with stale DB data)
+    if (!force && window._isSafeToSync && !window._isSafeToSync()) {
+      console.log('[Sync] Skipping refresh — local mutations in progress');
+      return;
+    }
+
     // Step 1: Flush any pending writes before pulling fresh data
     if (window._flushSyncQueue) {
       await window._flushSyncQueue();
@@ -467,7 +474,7 @@ async function refreshFromSupabase() {
 // When the user switches back to this tab, re-fetch everything from Supabase
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && document.getElementById('appPage').style.display !== 'none') {
-    await refreshFromSupabase();
+    await refreshFromSupabase(true);  // force on tab focus
     setDate();
     render();
     renderHallOfFame();

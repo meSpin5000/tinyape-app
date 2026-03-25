@@ -2605,10 +2605,10 @@ function notesTextToHtml(text) {
     const checked = line.match(/^\[x\] (.*)$/);
     if (unchecked) {
       const txt = escHtml(unchecked[1]) || '\u200B';
-      return `<div class="notes-line"><input type="checkbox" onclick="handleInlineCheck(this)"><span class="notes-line-text">${txt}</span></div>`;
+      return `<div class="notes-line"><input type="checkbox" tabindex="-1" onclick="handleInlineCheck(this)"><span class="notes-line-text">${txt}</span></div>`;
     } else if (checked) {
       const txt = escHtml(checked[1]) || '\u200B';
-      return `<div class="notes-line checked"><input type="checkbox" checked onclick="handleInlineCheck(this)"><span class="notes-line-text">${txt}</span></div>`;
+      return `<div class="notes-line checked"><input type="checkbox" tabindex="-1" checked onclick="handleInlineCheck(this)"><span class="notes-line-text">${txt}</span></div>`;
     } else {
       return `<div>${escHtml(line) || '<br>'}</div>`;
     }

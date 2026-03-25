@@ -11,12 +11,23 @@
   // Tasks that failed to save to Supabase get queued here for retry
   const pendingWrites = [];  // [{ task: {...}, retries: 0 }]
   const MAX_RETRIES = 10;
+  let _inFlightSaves = 0;     // count of currently executing DB saves
+  let _lastMutationTime = 0;  // timestamp of last local mutation
 
   window._syncQueue = pendingWrites;  // expose for debugging
 
-  // Check if there are unsaved local changes
+  // Check if there are unsaved local changes or in-flight saves
   window._hasPendingWrites = function() {
-    return pendingWrites.length > 0;
+    return pendingWrites.length > 0 || _inFlightSaves > 0;
+  };
+
+  // Check if it's safe to pull from DB (no recent mutations or in-flight saves)
+  window._isSafeToSync = function() {
+    if (_inFlightSaves > 0) return false;
+    if (pendingWrites.length > 0) return false;
+    // Don't sync within 5 seconds of last mutation
+    if (Date.now() - _lastMutationTime < 5000) return false;
+    return true;
   };
 
   // Flush all pending writes to Supabase (called before refresh)
@@ -84,12 +95,19 @@
     // Helper: persist a task to Supabase (with retry on failure)
     function persistTask(task) {
       if (!task) return;
+      _lastMutationTime = Date.now();
+      _inFlightSaves++;
       DB.saveTask(task).then(saved => {
+        _inFlightSaves--;
         if (saved && saved.id !== task.id) {
           // Update local ID with DB UUID
+          const oldId = task.id;
           task.id = saved.id;
+          // Re-render so DOM onclick handlers get the new UUID
+          if (typeof render === 'function') render();
         }
       }).catch(err => {
+        _inFlightSaves--;
         console.error('Sync error (saveTask), queueing retry:', err);
         // Check if this task is already in the retry queue
         const existing = pendingWrites.find(e => e.task.id === task.id);
@@ -110,12 +128,16 @@
     // ─── Patch addTask ───
     const _origAddTask = api.addTask.bind(api);
     api.addTask = function(title, category, recurring, recurDays, dueDate, drawer) {
+      _lastMutationTime = Date.now();
       const task = _origAddTask(title, category, recurring, recurDays, dueDate, drawer);
+      _inFlightSaves++;
       DB.saveTask(task).then(saved => {
+        _inFlightSaves--;
         if (saved && saved.id !== task.id) {
           task.id = saved.id;
         }
       }).catch(err => {
+        _inFlightSaves--;
         console.error('Sync error (addTask), queueing retry:', err);
         pendingWrites.push({ task: { ...task }, retries: 0 });
       });
