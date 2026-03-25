@@ -2314,37 +2314,43 @@ function openNotesSidebar(id, anchorEl) {
   const editable = card.querySelector('#notesEditable');
   editable.addEventListener('input', () => saveCurrentNotes());
   editable.addEventListener('keydown', handleNotesKeydown);
-  // With span-based checkboxes (contenteditable="false"), the browser
-  // should naturally place the caret in the text spans, not before checkboxes.
-  // This focus handler is a safety net in case the caret still lands outside text.
+
+  // Skip the outer contenteditable as a tab stop — when it receives focus
+  // via Tab, immediately redirect into the first .notes-line-text span.
+  // This avoids the user having to Tab twice (once to the container, once to text).
   editable.addEventListener('focus', function() {
-    requestAnimationFrame(() => {
-      const firstLine = editable.querySelector('.notes-line');
-      if (!firstLine) return;
-      const sel = window.getSelection();
-      if (!sel.rangeCount) return;
-      const node = sel.getRangeAt(0).startContainer;
-      const inTextSpan = node.nodeType === Node.TEXT_NODE
-        ? node.parentElement.closest('.notes-line-text')
-        : node.closest && node.closest('.notes-line-text');
-      if (!inTextSpan) {
-        const firstSpan = editable.querySelector('.notes-line-text');
-        if (firstSpan) {
-          const range = document.createRange();
-          range.selectNodeContents(firstSpan);
-          range.collapse(true);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        }
-      }
-    });
+    const firstTextSpan = editable.querySelector('.notes-line-text');
+    if (firstTextSpan) {
+      // Use rAF so browser finishes its focus handling first
+      requestAnimationFrame(() => {
+        firstTextSpan.focus();
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.selectNodeContents(firstTextSpan);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      });
+    }
   });
   setTimeout(() => {
-    editable.focus();
-    // Place cursor at end
-    const sel = window.getSelection();
-    sel.selectAllChildren(editable);
-    sel.collapseToEnd();
+    // On card open, focus the last text span (most natural position)
+    const allTextSpans = editable.querySelectorAll('.notes-line-text');
+    const lastSpan = allTextSpans.length > 0 ? allTextSpans[allTextSpans.length - 1] : null;
+    if (lastSpan) {
+      lastSpan.focus();
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(lastSpan);
+      range.collapse(false); // collapse to end
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      editable.focus();
+      const sel = window.getSelection();
+      sel.selectAllChildren(editable);
+      sel.collapseToEnd();
+    }
   }, 50);
 
   // Close on outside click
