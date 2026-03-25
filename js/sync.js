@@ -16,6 +16,13 @@
 
   window._syncQueue = pendingWrites;  // expose for debugging
 
+  // Resolve a task ID that might be stale (integer ID replaced by UUID).
+  // Onclick handlers capture the ID at render time; if the ID was updated
+  // from an integer to a UUID between render and click, this resolves it.
+  window._findTaskById = function(id) {
+    return store.tasks.find(t => t.id === id || t._localId === id);
+  };
+
   // Check if there are unsaved local changes or in-flight saves
   window._hasPendingWrites = function() {
     return pendingWrites.length > 0 || _inFlightSaves > 0;
@@ -95,16 +102,23 @@
     // Helper: persist a task to Supabase (with retry on failure)
     function persistTask(task) {
       if (!task) return;
+      // Cancel any pending delayed save from addTask (prevents double INSERT)
+      if (task._pendingSaveTimer) {
+        clearTimeout(task._pendingSaveTimer);
+        delete task._pendingSaveTimer;
+      }
       _lastMutationTime = Date.now();
       _inFlightSaves++;
       DB.saveTask(task).then(saved => {
         _inFlightSaves--;
         if (saved && saved.id !== task.id) {
-          // Update local ID with DB UUID
+          // Track the old local ID so handlers can still find this task
           const oldId = task.id;
+          task._localId = oldId;
           task.id = saved.id;
-          // Re-render so DOM onclick handlers get the new UUID
-          if (typeof render === 'function') render();
+          // Do NOT call render() here — it destroys in-flight animations
+          // and breaks setTimeout-captured DOM references in handleToggleDone.
+          // The next natural render cycle will pick up the new UUID.
         }
       }).catch(err => {
         _inFlightSaves--;
@@ -126,21 +140,18 @@
     }
 
     // ─── Patch addTask ───
+    // IMPORTANT: Don't save immediately — delay 300ms so the caller can finish
+    // mutations (set notes, isProject, voteUp, etc.) before the first INSERT.
+    // If voteUp or another mutation calls persistTask before the timer fires,
+    // persistTask cancels this timer and does a single save with all data.
     const _origAddTask = api.addTask.bind(api);
     api.addTask = function(title, category, recurring, recurDays, dueDate, drawer) {
       _lastMutationTime = Date.now();
       const task = _origAddTask(title, category, recurring, recurDays, dueDate, drawer);
-      _inFlightSaves++;
-      DB.saveTask(task).then(saved => {
-        _inFlightSaves--;
-        if (saved && saved.id !== task.id) {
-          task.id = saved.id;
-        }
-      }).catch(err => {
-        _inFlightSaves--;
-        console.error('Sync error (addTask), queueing retry:', err);
-        pendingWrites.push({ task: { ...task }, retries: 0 });
-      });
+      task._pendingSaveTimer = setTimeout(() => {
+        delete task._pendingSaveTimer;
+        persistTask(task);
+      }, 300);
       return task;
     };
 

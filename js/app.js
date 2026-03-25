@@ -695,13 +695,17 @@ function sortTodayByDate() {
 }
 
 function handleVoteUp(id) {
-  api.voteUp(id);
+  const task = window._findTaskById ? window._findTaskById(id) : store.tasks.find(t => t.id === id);
+  const currentId = task ? task.id : id;
+  api.voteUp(currentId);
   render();
   showToast('Added to today');
 }
 
 function handleRemoveFromToday(id) {
-  api.removeFromToday(id);
+  const task = window._findTaskById ? window._findTaskById(id) : store.tasks.find(t => t.id === id);
+  const currentId = task ? task.id : id;
+  api.removeFromToday(currentId);
   render();
   showToast('Moved to On Deck');
 }
@@ -710,6 +714,9 @@ function handleProjectComplete(id) {
   const row = document.querySelector(`.today-item[data-id="${id}"]`);
   if (!row) return;
 
+  const task = window._findTaskById ? window._findTaskById(id) : store.tasks.find(t => t.id === id);
+  const currentId = task ? task.id : id;
+
   const checkbox = row.querySelector('.checkbox');
   checkbox.classList.add('completing');
   row.classList.add('completing-row');
@@ -717,7 +724,7 @@ function handleProjectComplete(id) {
   setTimeout(() => {
     row.classList.add('fade-out');
     setTimeout(() => {
-      api.toggleDone(id);
+      api.toggleDone(currentId);
       try { render(); } catch(e) { console.error('render error:', e); }
       try { bumpCounter(); } catch(e) { console.error('bumpCounter error:', e); }
       try { spawnCreature(); } catch(e) { console.error('spawnCreature error:', e); }
@@ -735,19 +742,25 @@ function handleToggleDone(id) {
   checkbox.classList.add('completing');
   row.classList.add('completing-row');
 
-  // Hold for 1 second so user sees the satisfying check
-  const task = store.tasks.find(t => t.id === id);
+  // Resolve task now — ID may have changed from integer to UUID
+  const task = window._findTaskById ? window._findTaskById(id) : store.tasks.find(t => t.id === id);
   const wasRecurring = task && task.recurring;
+  const taskTitle = task ? task.title : '';
+  // Capture the CURRENT task ID (may be UUID now, even though onclick had integer)
+  const currentId = task ? task.id : id;
+
+  // Hold for 1 second so user sees the satisfying check
   setTimeout(() => {
     row.classList.add('fade-out');
     setTimeout(() => {
-      api.toggleDone(id);
+      // Use the resolved current ID for the toggle
+      api.toggleDone(currentId);
       try { render(); } catch(e) { console.error('render error:', e); }
       try { bumpCounter(); } catch(e) { console.error('bumpCounter error:', e); }
       try { spawnCreature(); } catch(e) { console.error('spawnCreature error:', e); }
       // Notify about recurring respawn
       if (wasRecurring) {
-        const respawned = store.tasks.find(t => t.title === task.title && !t.done && t.id !== id);
+        const respawned = store.tasks.find(t => t.title === taskTitle && !t.done && t.id !== currentId);
         if (respawned) {
           if (respawned.drawer) {
             showToast(`↻ Next "${respawned.title}" filed to Drawer`);
@@ -1105,7 +1118,7 @@ document.getElementById('addTaskNotes').addEventListener('keydown', (e) => {
     // Insert a new checkbox line
     const newLine = document.createElement('div');
     newLine.className = 'notes-line';
-    newLine.innerHTML = '<input type="checkbox" onclick="handleInlineCheck(this)"><span class="notes-line-text">\u200B</span>';
+    newLine.innerHTML = '<span class="cb-visual" contenteditable="false" onclick="handleInlineCheck(this)"></span><span class="notes-line-text">\u200B</span>';
     // Insert after current line or at end
     if (line && line.nextSibling) {
       el.insertBefore(newLine, line.nextSibling);
@@ -1348,7 +1361,9 @@ document.getElementById('drawerAddInput').addEventListener('keydown', (e) => {
 });
 
 function handleMoveToDrawerFromToday(id) {
-  api.moveToDrawer(id);
+  const task = window._findTaskById ? window._findTaskById(id) : store.tasks.find(t => t.id === id);
+  const currentId = task ? task.id : id;
+  api.moveToDrawer(currentId);
   render();
   showToast('Moved to Drawer');
 }
@@ -2093,7 +2108,9 @@ function handleAddCategoryFromPopover() {
 }
 
 function handleDeleteTask(id) {
-  api.deleteTask(id);
+  const task = window._findTaskById ? window._findTaskById(id) : store.tasks.find(t => t.id === id);
+  const currentId = task ? task.id : id;
+  api.deleteTask(currentId);
   render();
   showToast('Task killed');
 }
@@ -2193,16 +2210,19 @@ let currentNotesTaskId = null;
 let notesCardEl = null;
 
 function openNotesSidebar(id, anchorEl) {
+  // Resolve potentially stale integer ID to current UUID
+  const task = window._findTaskById ? window._findTaskById(id) : store.tasks.find(t => t.id === id);
+  const currentId = task ? task.id : id;
+
   // If already open for this task, toggle off
-  if (currentNotesTaskId === id && notesCardEl) {
+  if (currentNotesTaskId === currentId && notesCardEl) {
     closeNotesCard();
     return;
   }
   closeNotesCard(true);  // skip render — we'll open a new card immediately
 
-  const task = store.tasks.find(t => t.id === id);
   if (!task) return;
-  currentNotesTaskId = id;
+  currentNotesTaskId = currentId;
 
   // Find anchor row if not passed
   if (!anchorEl) {
@@ -2293,29 +2313,11 @@ function openNotesSidebar(id, anchorEl) {
   const editable = card.querySelector('#notesEditable');
   editable.addEventListener('input', () => saveCurrentNotes());
   editable.addEventListener('keydown', handleNotesKeydown);
-  // Prevent Tab from placing cursor before checkboxes.
-  // Intercept Tab on the card so we control where cursor lands.
-  card.addEventListener('keydown', function(e) {
-    if (e.key !== 'Tab' || e.shiftKey) return;
-    // If editable has checklist lines and isn't currently focused, hijack Tab
-    const firstLine = editable.querySelector('.notes-line');
-    if (firstLine && document.activeElement !== editable) {
-      e.preventDefault();
-      editable.focus();
-      const firstSpan = editable.querySelector('.notes-line-text');
-      if (firstSpan) {
-        const range = document.createRange();
-        const sel = window.getSelection();
-        range.selectNodeContents(firstSpan);
-        range.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
-    }
-  });
-  // Also fix cursor on any focus (click, programmatic) if it lands before a checkbox
+  // With span-based checkboxes (contenteditable="false"), the browser
+  // should naturally place the caret in the text spans, not before checkboxes.
+  // This focus handler is a safety net in case the caret still lands outside text.
   editable.addEventListener('focus', function() {
-    setTimeout(() => {
+    requestAnimationFrame(() => {
       const firstLine = editable.querySelector('.notes-line');
       if (!firstLine) return;
       const sel = window.getSelection();
@@ -2334,7 +2336,7 @@ function openNotesSidebar(id, anchorEl) {
           sel.addRange(range);
         }
       }
-    }, 0);
+    });
   });
   setTimeout(() => {
     editable.focus();
@@ -2597,6 +2599,9 @@ function cardVoteUp(id) {
 // ─── CHECKLIST / NOTES (inline contenteditable with checkboxes) ───
 
 // Convert task.notes plain text → HTML for contenteditable
+// Uses <span> for checkboxes instead of <input> to prevent browser
+// Tab focus from landing before checkbox elements (the root cause of
+// the persistent cursor-before-checkbox bug).
 function notesTextToHtml(text) {
   if (!text) return '';
   const lines = text.split('\n');
@@ -2605,10 +2610,10 @@ function notesTextToHtml(text) {
     const checked = line.match(/^\[x\] (.*)$/);
     if (unchecked) {
       const txt = escHtml(unchecked[1]) || '\u200B';
-      return `<div class="notes-line"><input type="checkbox" tabindex="-1" onclick="handleInlineCheck(this)"><span class="notes-line-text">${txt}</span></div>`;
+      return `<div class="notes-line"><span class="cb-visual" contenteditable="false" onclick="handleInlineCheck(this)"></span><span class="notes-line-text">${txt}</span></div>`;
     } else if (checked) {
       const txt = escHtml(checked[1]) || '\u200B';
-      return `<div class="notes-line checked"><input type="checkbox" tabindex="-1" checked onclick="handleInlineCheck(this)"><span class="notes-line-text">${txt}</span></div>`;
+      return `<div class="notes-line checked"><span class="cb-visual checked" contenteditable="false" onclick="handleInlineCheck(this)"></span><span class="notes-line-text">${txt}</span></div>`;
     } else {
       return `<div>${escHtml(line) || '<br>'}</div>`;
     }
@@ -2629,10 +2634,11 @@ function notesHtmlToText(container) {
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     if (node.classList && node.classList.contains('notes-line')) {
-      const cb = node.querySelector('input[type="checkbox"]');
+      const cb = node.querySelector('.cb-visual') || node.querySelector('input[type="checkbox"]');
       const textEl = node.querySelector('.notes-line-text');
       const text = textEl ? textEl.textContent.replace(/\u200B/g, '') : '';
-      const prefix = cb && cb.checked ? '[x] ' : '[ ] ';
+      const isChecked = cb ? (cb.classList ? cb.classList.contains('checked') : cb.checked) : false;
+      const prefix = isChecked ? '[x] ' : '[ ] ';
       lines.push(prefix + text);
     } else {
       // Regular line (div, p, or bare text)
@@ -2648,13 +2654,21 @@ function notesHtmlToText(container) {
 }
 
 // Handle checkbox click inside contenteditable
+// Works with both <span class="cb-visual"> and legacy <input type="checkbox">
 function handleInlineCheck(cb) {
   const line = cb.closest('.notes-line');
   if (!line) return;
-  if (cb.checked) {
-    line.classList.add('checked');
+  // Toggle checked state — span-based checkboxes use classList, input-based use .checked
+  const isInput = cb.tagName === 'INPUT';
+  let wasChecked;
+  if (isInput) {
+    wasChecked = cb.checked;
+    if (wasChecked) { line.classList.add('checked'); } else { line.classList.remove('checked'); }
   } else {
-    line.classList.remove('checked');
+    // Span-based: toggle the class
+    wasChecked = !cb.classList.contains('checked');
+    cb.classList.toggle('checked');
+    if (wasChecked) { line.classList.add('checked'); } else { line.classList.remove('checked'); }
   }
   // If in add-modal, no need to save/render
   if (cb.closest('#addTaskNotes')) return;
@@ -2730,8 +2744,9 @@ function handleNotesKeydown(e) {
 
   const newLine = document.createElement('div');
   newLine.className = 'notes-line';
-  const newCb = document.createElement('input');
-  newCb.type = 'checkbox';
+  const newCb = document.createElement('span');
+  newCb.className = 'cb-visual';
+  newCb.contentEditable = 'false';
   newCb.onclick = function() { handleInlineCheck(this); };
   const newTextSpan = document.createElement('span');
   newTextSpan.className = 'notes-line-text';

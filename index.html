@@ -429,9 +429,13 @@ async function refreshFromSupabase(force) {
       // (These will be retried on next sync cycle)
       if (localOnlyTasks.length > 0) {
         localOnlyTasks.forEach(localTask => {
-          // Only re-add if it's not already in the DB (by title match)
+          // Check if this local task already made it to the DB.
+          // After saving, the task's _localId is set to the old integer ID.
+          // Also check by title + similar timestamps as a fallback.
           const alreadyInDb = store.tasks.some(t =>
-            t.title === localTask.title && t.createdAt);
+            t._localId === localTask.id ||
+            (t.title === localTask.title && t.today === localTask.today && t.done === localTask.done)
+          );
           if (!alreadyInDb) {
             store.tasks.push(localTask);
           }
