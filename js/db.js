@@ -82,7 +82,9 @@ window.TinyApeDB = {
       drawer: jsTask.drawer,
       drawer_category: jsTask.drawerCategory,
       is_project: jsTask.isProject,
+      track_time: jsTask.trackTime || false,
       project_order: jsTask.projectOrder,
+      killed: jsTask.killed || false,
       killed_at: jsTask.killedAt
     };
     // Include id and user_id only if present (not for new inserts)

@@ -424,63 +424,81 @@ function formatCompletedDate(isoStr) {
 }
 
 function renderCompleted() {
-  const el = document.getElementById('completedList');
-  const section = document.getElementById('completedSection');
   const done = api.getDoneTasks();
-
-  // Update all-time counter
-  const allTimeEl = document.getElementById('completedAllTime');
-  if (allTimeEl) allTimeEl.textContent = done.length ? `[${done.length}]` : '';
-
+  const pill = document.getElementById('completedPill');
+  const countEl = document.getElementById('completedPillCount');
   if (done.length === 0) {
-    section.style.display = 'none';
+    if (pill) pill.style.display = 'none';
     return;
   }
-
-  section.style.display = 'block';
-
-  // Sort reverse chronological (most recent first)
-  const sorted = [...done].sort((a, b) => {
-    const aDate = a.completedAt || '';
-    const bDate = b.completedAt || '';
-    return bDate.localeCompare(aDate);
-  });
-
-  el.innerHTML = sorted.map(t => {
-    const dateStr = formatCompletedDate(t.completedAt);
-    const projInfo = t.isProject ? `<span class="project-indicator">⏱</span>` : '';
-    const totalMins = (t.timeSessions || []).reduce((sum, s) => sum + s.minutes, 0);
-    const timeInfo = totalMins ? `<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">${formatMinutes(totalMins)}</span>` : '';
-    return `
-      <div class="completed-task">
-        <span class="done-check uncheckable" onclick="handleUncomplete(${qid(t.id)})" title="Undo — restore task">✓</span>
-        <span class="done-title">${t.title}${projInfo}${timeInfo}</span>
-        ${dateStr ? `<span class="done-date">${dateStr}</span>` : ''}
-      </div>`;
-  }).join('');
+  if (pill) pill.style.display = '';
+  if (countEl) countEl.textContent = done.length;
 }
 
 function renderKilled() {
-  const el = document.getElementById('killedList');
-  const section = document.getElementById('killedSection');
   const killed = store.killedTasks;
-
+  const pill = document.getElementById('killedPill');
+  const countEl = document.getElementById('killedPillCount');
   if (killed.length === 0) {
-    section.style.display = 'none';
+    if (pill) pill.style.display = 'none';
     return;
   }
+  if (pill) pill.style.display = '';
+  if (countEl) countEl.textContent = killed.length;
+}
 
-  section.style.display = 'block';
+function openArchivePopup(type) {
+  const overlay = document.getElementById('archivePopupOverlay');
+  const popup = document.getElementById('archivePopup');
+  const title = document.getElementById('archivePopupTitle');
+  const list = document.getElementById('archivePopupList');
 
-  el.innerHTML = killed.map((t, idx) => `
-      <div class="completed-task" style="justify-content:space-between;">
-        <span style="display:flex;align-items:center;gap:10px;">
-          <span class="done-check" style="background:var(--text-muted);">✕</span>
+  if (type === 'completed') {
+    title.textContent = 'Completed';
+    const done = api.getDoneTasks();
+    if (done.length === 0) {
+      list.innerHTML = '<div class="archive-popup-empty">No completed tasks yet.</div>';
+    } else {
+      const sorted = [...done].sort((a, b) => {
+        const aDate = a.completedAt || '';
+        const bDate = b.completedAt || '';
+        return bDate.localeCompare(aDate);
+      });
+      list.innerHTML = sorted.map(t => {
+        const dateStr = formatCompletedDate(t.completedAt);
+        const projInfo = t.isProject ? '<span class="project-indicator">⏱</span>' : '';
+        const totalMins = (t.timeSessions || []).reduce((sum, s) => sum + s.minutes, 0);
+        const timeInfo = totalMins ? `<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">${formatMinutes(totalMins)}</span>` : '';
+        return `
+          <div class="completed-task">
+            <span class="done-check uncheckable" onclick="handleUncomplete(${qid(t.id)}); closeArchivePopup();" title="Undo — restore task">✓</span>
+            <span class="done-title">${t.title}${projInfo}${timeInfo}</span>
+            ${dateStr ? `<span class="done-date">${dateStr}</span>` : ''}
+          </div>`;
+      }).join('');
+    }
+  } else {
+    title.textContent = 'Killed';
+    const killed = store.killedTasks;
+    if (killed.length === 0) {
+      list.innerHTML = '<div class="archive-popup-empty">No killed tasks.</div>';
+    } else {
+      list.innerHTML = killed.map((t, idx) => `
+        <div class="completed-task">
+          <span class="done-check killed-check">✕</span>
           <span class="done-title">${t.title}</span>
-        </span>
-        <button class="restore-btn" onclick="handleRestoreTask(${idx})" title="Restore task">↩</button>
-      </div>`
-  ).join('');
+          <button class="restore-btn" onclick="handleRestoreTask(${idx}); closeArchivePopup();" title="Restore task">↩</button>
+        </div>`).join('');
+    }
+  }
+
+  overlay.classList.add('open');
+  popup.classList.add('open');
+}
+
+function closeArchivePopup() {
+  document.getElementById('archivePopupOverlay').classList.remove('open');
+  document.getElementById('archivePopup').classList.remove('open');
 }
 
 function renderProjectsList() {
@@ -793,19 +811,12 @@ function toggleCategory(cat) {
   group.classList.toggle('open');
 }
 
-function toggleCompleted() {
-  const section = document.getElementById('completedSection');
-  section.classList.toggle('open');
-}
-
-function toggleKilled() {
-  const section = document.getElementById('killedSection');
-  section.classList.toggle('open');
-}
+// toggleCompleted / toggleKilled removed — now using archive popup
 
 // Add task
 // ─── ADD TASK MODAL ───
 let addModalContext = 'ondeck';  // 'today', 'ondeck', 'project', 'drawer'
+let addModalDestination = 'ondeck'; // selected destination for OK button
 let addTaskListMode = false;
 
 // ─── Modal notes helpers (contenteditable div) ───
@@ -843,6 +854,9 @@ function placeCursorAfterCheckbox(container) {
 
 function openAddModal(context) {
   addModalContext = context || 'ondeck';
+  addModalDestination = (context === 'today') ? 'today'
+    : (context === 'project') ? 'ondeck'
+    : 'ondeck';
   store.addTaskAsProject = (context === 'project');
   addTaskListMode = (context === 'project');  // auto-list mode for projects
   store.selectedDueDate = null;
@@ -895,11 +909,8 @@ function closeAddModal() {
   const input = document.getElementById('addTaskInput');
   const title = input.value.trim();
   if (title) {
-    const defaultDest = addModalContext === 'today' ? 'today'
-      : addModalContext === 'project' ? 'ondeck'
-      : 'ondeck';
-    addModalSubmit(defaultDest);
-    return; // addModalSubmit calls closeAddModal internally after resetting
+    addModalSubmit(addModalDestination);
+    return; // addModalSubmit calls _resetAddModal internally
   }
 
   _resetAddModal();
@@ -956,11 +967,6 @@ function renderAddModalPills() {
 function renderAddModalActions() {
   const el = document.getElementById('addModalActions');
 
-  // Always show all 4 destinations — highlight the contextual default
-  const primaryCtx = addModalContext === 'today' ? 'today'
-    : addModalContext === 'project' ? 'ondeck'
-    : 'ondeck';
-
   const buttons = [
     { dest: 'today', label: 'Today' },
     { dest: 'ondeck', label: store.addTaskAsProject ? 'Projects' : 'On Deck' },
@@ -969,11 +975,22 @@ function renderAddModalActions() {
 
   let html = '';
   buttons.forEach(b => {
-    html += `<button class="add-modal-action-btn" onclick="addModalSubmit('${b.dest}')">${b.label}</button>`;
+    const isSelected = b.dest === addModalDestination;
+    html += `<button class="add-modal-action-btn${isSelected ? ' selected' : ''}" onclick="selectModalDestination('${b.dest}')">${b.label}</button>`;
   });
-  html += `<button class="add-modal-action-btn primary" onclick="addModalSubmit('${primaryCtx}')">OK</button>`;
+  html += `<button class="add-modal-action-btn primary" onclick="addModalSubmit(addModalDestination)">OK</button>`;
 
   el.innerHTML = html;
+}
+
+function selectModalDestination(dest) {
+  addModalDestination = dest;
+  // If selecting Today, snap the date pill to today
+  if (dest === 'today' && !store.selectedDueDate) {
+    store.selectedDueDate = new Date().toISOString().split('T')[0];
+    renderAddModalPills();
+  }
+  renderAddModalActions();
 }
 
 function toggleAddAsProject() {
@@ -1049,6 +1066,11 @@ function addModalSubmit(destination) {
   const isDrawer = (destination === 'drawer');
   const isToday = (destination === 'today');
   const todayStr = new Date().toISOString().split('T')[0];
+  // When adding to Today, force due date to today (override 1-week default)
+  if (isToday && !store.selectedDueDate) {
+    store.selectedDueDate = todayStr;
+    renderAddModalPills(); // visually snap the calendar pill to today
+  }
   const dueDate = isToday ? (store.selectedDueDate || todayStr) : store.selectedDueDate || (isDrawer ? null : getDefaultDueDate());
 
   const task = api.addTask(
@@ -1100,9 +1122,7 @@ function addModalSubmit(destination) {
 // Keyboard shortcuts for the modal
 document.getElementById('addTaskInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
-    // Submit to primary destination
-    if (addModalContext === 'today') addModalSubmit('today');
-    else addModalSubmit('ondeck');
+    addModalSubmit(addModalDestination);
   }
   if (e.key === 'Escape') closeAddModal();
 });
@@ -1159,6 +1179,10 @@ document.getElementById('addTaskNotes').addEventListener('keydown', (e) => {
 
 // Close modal on Escape anywhere
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('archivePopup').classList.contains('open')) {
+    closeArchivePopup();
+    return;
+  }
   if (e.key === 'Escape' && document.getElementById('addModal').classList.contains('open')) {
     closeAddModal();
   }

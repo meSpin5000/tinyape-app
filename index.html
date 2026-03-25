@@ -231,25 +231,29 @@
   </div>
 
   <!-- COMPLETED -->
-  <div class="completed-section" id="completedSection" style="display:none;">
-    <div class="completed-header" onclick="toggleCompleted()">
-      <span class="completed-header-left">
-        <h2 class="section-title">Completed <span id="completedAllTime" style="font-size:10px; color:var(--text-muted); font-weight:400; font-style:italic; font-family:Inter,sans-serif; margin-left:4px; vertical-align:baseline;"></span></h2>
-      </span>
-      <span class="completed-toggle"><span class="arrow">▾</span></span>
-    </div>
-    <div class="completed-items" id="completedList"></div>
+  <!-- Completed & Killed — hidden containers for render targets -->
+  <div id="completedSection" style="display:none;"><div id="completedList"></div></div>
+  <div id="killedSection" style="display:none;"><div id="killedList"></div></div>
+  <span id="completedAllTime" style="display:none;"></span>
+
+  <!-- Footer pills for Completed & Killed -->
+  <div class="archive-footer" id="archiveFooter">
+    <button class="archive-pill" id="completedPill" onclick="openArchivePopup('completed')" style="display:none;">
+      <span class="archive-pill-icon">✓</span> Completed <span class="archive-pill-count" id="completedPillCount"></span>
+    </button>
+    <button class="archive-pill killed" id="killedPill" onclick="openArchivePopup('killed')" style="display:none;">
+      <span class="archive-pill-icon">✕</span> Killed <span class="archive-pill-count" id="killedPillCount"></span>
+    </button>
   </div>
 
-  <!-- KILLED -->
-  <div class="completed-section" id="killedSection" style="display:none;">
-    <div class="completed-header" onclick="toggleKilled()">
-      <span class="completed-header-left">
-        <h2 class="section-title">Killed</h2>
-      </span>
-      <span class="completed-toggle"><span class="arrow">▾</span></span>
+  <!-- Archive popup overlay -->
+  <div class="archive-popup-overlay" id="archivePopupOverlay" onclick="closeArchivePopup()"></div>
+  <div class="archive-popup" id="archivePopup">
+    <div class="archive-popup-header">
+      <span class="archive-popup-title" id="archivePopupTitle"></span>
+      <button class="archive-popup-close" onclick="closeArchivePopup()">✕</button>
     </div>
-    <div class="completed-items" id="killedList"></div>
+    <div class="archive-popup-list" id="archivePopupList"></div>
   </div>
 
   <!-- CATEGORIES (hidden) -->

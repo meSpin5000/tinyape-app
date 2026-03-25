@@ -452,6 +452,11 @@
     border-color: var(--text-muted);
     background: var(--bg);
   }
+  .add-modal-action-btn.selected {
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+    background: var(--bg-secondary);
+  }
   .add-modal-action-btn.primary {
     background: var(--accent-red);
     border-color: var(--accent-red);
@@ -1273,27 +1278,6 @@
     color: var(--accent-blue);
   }
 
-  /* ─── RESTORE BUTTON ─── */
-  .restore-btn {
-    background: none;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 3px 8px;
-    border-radius: 4px;
-    font-size: 13px;
-    transition: all var(--transition);
-    flex-shrink: 0;
-    opacity: 0;
-  }
-  .completed-task:hover .restore-btn {
-    opacity: 1;
-  }
-  .restore-btn:hover {
-    color: var(--accent-green);
-    border-color: var(--accent-green);
-  }
-
   /* ─── CATEGORY CRUD ─── */
   .cat-crud-row {
     display: flex;
@@ -1552,89 +1536,168 @@
     transform: translateX(40px);
   }
 
-  /* ─── COMPLETED ACCORDION ─── */
-  .completed-section { margin-top: 48px; }
-  .completed-section .section-title {
-    font-family: 'Source Serif 4', Georgia, serif;
-    font-size: 22px;
-    font-weight: 600;
-    color: var(--text);
+  /* ─── ARCHIVE FOOTER (Completed & Killed pills) ─── */
+  .archive-footer {
+    display: flex;
+    gap: 8px;
+    margin-top: 48px;
+    padding: 0 4px;
+    justify-content: center;
   }
-  .completed-header {
+  .archive-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    font-size: 12px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .archive-pill:hover {
+    border-color: var(--text-muted);
+    color: var(--text-secondary);
+  }
+  .archive-pill-icon {
+    font-size: 10px;
+    opacity: 0.7;
+  }
+  .archive-pill-count {
+    font-size: 10px;
+    opacity: 0.6;
+  }
+
+  /* ─── ARCHIVE POPUP ─── */
+  .archive-popup-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.3);
+    z-index: 300;
+  }
+  .archive-popup-overlay.open { display: block; }
+  .archive-popup {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 301;
+    width: 440px;
+    max-width: calc(100vw - 32px);
+    max-height: 70vh;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.15);
+    overflow: hidden;
+  }
+  .archive-popup.open { display: flex; flex-direction: column; }
+  .archive-popup-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 4px;
-    padding-bottom: 10px;
-    cursor: pointer;
-    transition: color var(--transition);
-    border-bottom: 2px solid var(--accent-red);
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
   }
-  .completed-header:hover { color: var(--text); }
-  .completed-header-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 14px;
-    font-weight: 500;
+  .archive-popup-title {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
   }
-  .completed-toggle {
-    font-size: 12px;
+  .archive-popup-close {
+    background: none;
+    border: none;
+    font-size: 16px;
     color: var(--text-muted);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .completed-toggle .arrow {
-    transition: transform var(--transition);
-    display: inline-block;
-  }
-  .completed-section.open .completed-toggle .arrow {
-    transform: rotate(180deg);
-  }
-  .completed-items {
-    display: none;
-    padding: 2px 0;
-  }
-  .completed-section.open .completed-items { display: block; }
-  .completed-task {
-    display: flex;
-    align-items: center;
-    padding: 12px 16px;
-    gap: 12px;
-    font-size: 14px;
-    color: var(--done-text);
-    border-radius: 6px;
-  }
-  .completed-task .done-check {
-    width: 18px;
-    height: 18px;
+    cursor: pointer;
+    padding: 4px 8px;
     border-radius: 4px;
+    transition: background 0.15s;
+  }
+  .archive-popup-close:hover {
+    background: var(--bg-secondary);
+  }
+  .archive-popup-list {
+    overflow-y: auto;
+    padding: 8px 0;
+    flex: 1;
+  }
+  .archive-popup-list .completed-task {
+    display: flex;
+    align-items: center;
+    padding: 10px 20px;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .archive-popup-list .completed-task .done-check {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
     background: var(--accent-green);
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    font-size: 10px;
+    font-size: 9px;
     color: white;
   }
-  .completed-task .done-check.uncheckable {
+  .archive-popup-list .completed-task .done-check.killed-check {
+    background: var(--text-muted);
+  }
+  .archive-popup-list .completed-task .done-check.uncheckable {
     cursor: pointer;
     transition: background 0.2s ease, transform 0.15s ease;
   }
-  .completed-task .done-check.uncheckable:hover {
+  .archive-popup-list .completed-task .done-check.uncheckable:hover {
     background: var(--accent-amber);
-    transform: scale(1.15);
+    transform: scale(1.1);
   }
-  .completed-task .done-title {
+  .archive-popup-list .completed-task .done-title {
     text-decoration: line-through;
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .completed-task .done-date {
-    font-size: 12px;
+  .archive-popup-list .completed-task .done-date {
+    font-size: 11px;
     color: var(--text-muted);
     flex-shrink: 0;
-    margin-left: auto;
+    opacity: 0.7;
+  }
+  .archive-popup-list .restore-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s;
+  }
+  .archive-popup-list .completed-task:hover .restore-btn {
+    opacity: 1;
+  }
+  .archive-popup-list .restore-btn:hover {
+    background: var(--bg-secondary);
+  }
+  .archive-popup-empty {
+    padding: 24px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-style: italic;
   }
 
   /* ─── TOASTS / FEEDBACK ─── */
@@ -3304,14 +3367,9 @@
       padding-top: 16px;
     }
 
-    /* Completed / Killed sections */
-    .completed-section .section-title {
-      font-size: 18px;
-    }
-    .completed-task {
-      font-size: 13px;
-      padding: 10px 8px;
-      gap: 6px;
+    /* Archive popup mobile */
+    .archive-popup {
+      width: calc(100vw - 24px);
     }
 
     /* Projects section */
