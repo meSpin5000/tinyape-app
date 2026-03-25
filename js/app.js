@@ -1,3 +1,7 @@
+// Quote an ID for use in inline onclick handlers.
+// Integer IDs work bare, but UUID strings need quotes to be valid JS.
+function qid(id) { return typeof id === 'string' ? `'${id}'` : id; }
+
 // ─── DATA STORE ───
 const store = {
   tasks: [],
@@ -393,24 +397,24 @@ function renderToday() {
 function todayItemHtml(t) {
   const recurLabel = formatRecurring(t);
   const recurInline = recurLabel
-    ? `<span class="recur-inline-icon" onclick="event.stopPropagation(); openScheduleWithRepeat(${t.id}, this)" title="${recurLabel}">↻</span>`
+    ? `<span class="recur-inline-icon" onclick="event.stopPropagation(); openScheduleWithRepeat(${qid(t.id)}, this)" title="${recurLabel}">↻</span>`
     : '';
 
   const due = formatDueDate(t.dueDate);
-  const dueHtml = due ? `<span class="task-due task-due-clickable ${due.cls}" onclick="openSchedulePopover(${t.id}, this)" title="Click to change date">${due.text}</span>` : '';
+  const dueHtml = due ? `<span class="task-due task-due-clickable ${due.cls}" onclick="openSchedulePopover(${qid(t.id)}, this)" title="Click to change date">${due.text}</span>` : '';
 
   return `
     <div class="today-item" data-id="${t.id}">
       <span class="drag-handle" title="Drag to reorder">⠿</span>
       <span class="today-number">${t.todayOrder}</span>
-      <div class="checkbox" onclick="handleToggleDone(${t.id})"></div>
+      <div class="checkbox" onclick="handleToggleDone(${qid(t.id)})"></div>
       <div class="task-content">
-        <div class="task-title task-title-clickable" onclick="openNotesSidebar(${t.id})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</div>
+        <div class="task-title task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</div>
       </div>
       ${dueHtml}
-      <button class="push-btn" onclick="openPushPopover(${t.id}, this)" title="Push out">⟩</button>
-      <button class="push-btn" onclick="handleMoveToDrawerFromToday(${t.id})" title="Move to Drawer">${drawerIconSvg}</button>
-      <button class="remove-btn" onclick="handleDeleteTask(${t.id})" title="Delete">✕</button>
+      <button class="push-btn" onclick="openPushPopover(${qid(t.id)}, this)" title="Push out">⟩</button>
+      <button class="push-btn" onclick="handleMoveToDrawerFromToday(${qid(t.id)})" title="Move to Drawer">${drawerIconSvg}</button>
+      <button class="remove-btn" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
     </div>`;
 }
 
@@ -449,7 +453,7 @@ function renderCompleted() {
     const timeInfo = totalMins ? `<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">${formatMinutes(totalMins)}</span>` : '';
     return `
       <div class="completed-task">
-        <span class="done-check uncheckable" onclick="handleUncomplete(${t.id})" title="Undo — restore task">✓</span>
+        <span class="done-check uncheckable" onclick="handleUncomplete(${qid(t.id)})" title="Undo — restore task">✓</span>
         <span class="done-title">${t.title}${projInfo}${timeInfo}</span>
         ${dateStr ? `<span class="done-date">${dateStr}</span>` : ''}
       </div>`;
@@ -503,32 +507,32 @@ function renderProjectsList() {
 
     const totalMins = (t.timeSessions || []).reduce((sum, s) => sum + s.minutes, 0);
     const timeHtml = totalMins
-      ? `<span class="project-time-link" onclick="openNotesSidebar(${t.id})" title="View time log">⏱ ${formatMinutes(totalMins)}</span>`
-      : `<span class="project-time-link muted" onclick="openNotesSidebar(${t.id})" title="Log time">⏱ track</span>`;
+      ? `<span class="project-time-link" onclick="openNotesSidebar(${qid(t.id)})" title="View time log">⏱ ${formatMinutes(totalMins)}</span>`
+      : `<span class="project-time-link muted" onclick="openNotesSidebar(${qid(t.id)})" title="Log time">⏱ track</span>`;
 
     const due = formatDueDate(t.dueDate);
     const dateBtn = due
-      ? `<span class="task-due task-due-clickable ${due.cls}" onclick="openSchedulePopover(${t.id}, this)" title="Change date">${due.text}</span>`
+      ? `<span class="task-due task-due-clickable ${due.cls}" onclick="openSchedulePopover(${qid(t.id)}, this)" title="Change date">${due.text}</span>`
       : '';
     const recurInline = t.recurring
-      ? `<span class="recur-inline-icon" onclick="event.stopPropagation(); openScheduleWithRepeat(${t.id}, this)">↻</span>`
+      ? `<span class="recur-inline-icon" onclick="event.stopPropagation(); openScheduleWithRepeat(${qid(t.id)}, this)">↻</span>`
       : '';
 
     return `
       <div class="today-item project-row" data-id="${t.id}">
         <span class="drag-handle" title="Drag to reorder">⠿</span>
         <span class="today-number">${idx + 1}</span>
-        <div class="checkbox" onclick="handleProjectComplete(${t.id})"></div>
+        <div class="checkbox" onclick="handleProjectComplete(${qid(t.id)})"></div>
         <div class="task-content">
-          <div class="task-title task-title-clickable" onclick="openNotesSidebar(${t.id})">
+          <div class="task-title task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">
             ${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${recurInline}
           </div>
         </div>
         ${progressHtml}
         ${timeHtml}
         ${dateBtn}
-        <button class="push-btn" onclick="openPushPopover(${t.id}, this)" title="Push out">⟩</button>
-        <button class="remove-btn" onclick="handleDeleteTask(${t.id})" title="Delete">✕</button>
+        <button class="push-btn" onclick="openPushPopover(${qid(t.id)}, this)" title="Push out">⟩</button>
+        <button class="remove-btn" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
       </div>`;
   }).join('');
 }
@@ -540,26 +544,26 @@ function renderBacklog() {
   el.innerHTML = tasks.map(t => {
     const recurLabel = formatRecurring(t);
     const recurInline = recurLabel
-      ? `<span class="recur-inline-icon" onclick="event.stopPropagation(); openScheduleWithRepeat(${t.id}, this)" title="${recurLabel}">↻</span>`
+      ? `<span class="recur-inline-icon" onclick="event.stopPropagation(); openScheduleWithRepeat(${qid(t.id)}, this)" title="${recurLabel}">↻</span>`
       : '';
 
     const due = formatDueDate(t.dueDate);
     // Date IS the button — click to open schedule
     const dateBtn = due
-      ? `<span class="task-due task-due-clickable ${due.cls}" onclick="openSchedulePopover(${t.id}, this)" title="Change date">${due.text}</span>`
-      : `<span class="task-due task-due-clickable" onclick="openSchedulePopover(${t.id}, this)" title="Set date" style="opacity:0.4;font-size:11px;">+ date</span>`;
+      ? `<span class="task-due task-due-clickable ${due.cls}" onclick="openSchedulePopover(${qid(t.id)}, this)" title="Change date">${due.text}</span>`
+      : `<span class="task-due task-due-clickable" onclick="openSchedulePopover(${qid(t.id)}, this)" title="Set date" style="opacity:0.4;font-size:11px;">+ date</span>`;
 
     return `
       <div class="backlog-item" data-id="${t.id}">
-        <button class="vote-btn" onclick="handleVoteUp(${t.id})" title="Add to today">
+        <button class="vote-btn" onclick="handleVoteUp(${qid(t.id)})" title="Add to today">
           ${plusSvg}
         </button>
-        <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${t.id})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</span>
+        <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</span>
         ${dateBtn}
         <div class="backlog-actions">
-          <button class="action-box" onclick="openPushPopover(${t.id}, this)" title="Push out">⟩</button>
-          <button class="action-box" onclick="handleMoveToDrawer(${t.id})" title="Move to Drawer">${drawerIconSvg}</button>
-          <button class="action-box action-trash" onclick="handleDeleteTask(${t.id})" title="Delete">✕</button>
+          <button class="action-box" onclick="openPushPopover(${qid(t.id)}, this)" title="Push out">⟩</button>
+          <button class="action-box" onclick="handleMoveToDrawer(${qid(t.id)})" title="Move to Drawer">${drawerIconSvg}</button>
+          <button class="action-box action-trash" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
         </div>
       </div>`;
   }).join('');
@@ -617,7 +621,7 @@ function renderCategories() {
             const dd = formatDueDate(t.dueDate);
             return `
             <div class="category-task">
-              <button class="mini-vote" onclick="handleVoteUp(${t.id})" title="Add to today">${plusSvg}</button>
+              <button class="mini-vote" onclick="handleVoteUp(${qid(t.id)})" title="Add to today">${plusSvg}</button>
               <span>${t.title}</span>
               ${rl ? `<span class="tag tag-recurring">↻ ${rl}</span>` : ''}
               ${dd ? `<span class="task-due ${dd.cls}">${dd.text}</span>` : ''}
@@ -1604,11 +1608,11 @@ function renderDrawer() {
     const notesIcon = t.notes ? '<span class="notes-indicator">📄</span>' : '';
 
     return `<div class="drawer-item" data-id="${t.id}">
-      <span class="drawer-item-title" onclick="openNotesSidebar(${t.id})" title="Click to open">${t.title}${notesIcon}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurIcon}</span>
+      <span class="drawer-item-title" onclick="openNotesSidebar(${qid(t.id)})" title="Click to open">${t.title}${notesIcon}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurIcon}</span>
       ${dateMeta}
       <div class="drawer-item-actions">
-        <button class="drawer-up-btn" onclick="handleDrawerMoveToOnDeck(${t.id})" title="Move to On Deck"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="13" x2="8" y2="3"/><polyline points="3,7 8,2 13,7"/></svg></button>
-        <button onclick="handleDrawerTrash(${t.id})" title="Delete">✕</button>
+        <button class="drawer-up-btn" onclick="handleDrawerMoveToOnDeck(${qid(t.id)})" title="Move to On Deck"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="13" x2="8" y2="3"/><polyline points="3,7 8,2 13,7"/></svg></button>
+        <button onclick="handleDrawerTrash(${qid(t.id)})" title="Delete">✕</button>
       </div>
     </div>`;
   };
@@ -2242,7 +2246,8 @@ function openNotesSidebar(id, anchorEl) {
 
   // Find anchor row if not passed
   if (!anchorEl) {
-    anchorEl = document.querySelector(`.today-item[data-id="${id}"], .backlog-item[data-id="${id}"], .drawer-item[data-id="${id}"]`);
+    anchorEl = document.querySelector(`.today-item[data-id="${currentId}"], .backlog-item[data-id="${currentId}"], .drawer-item[data-id="${currentId}"]`)
+      || document.querySelector(`.today-item[data-id="${id}"], .backlog-item[data-id="${id}"], .drawer-item[data-id="${id}"]`);
   }
 
   // Build the card
@@ -2260,7 +2265,7 @@ function openNotesSidebar(id, anchorEl) {
   if (task.today) {
     pillsHtml += `<span class="notes-card-pill active" title="In Today list">${sunIconSvg} Today</span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardVoteUp(${id})" title="Add to Today">${sunIconSvg} Today</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="cardVoteUp(${qid(id)})" title="Add to Today">${sunIconSvg} Today</span>`;
   }
   // Unified schedule pill
   const hasSchedule = due || recurLabel;
@@ -2268,21 +2273,21 @@ function openNotesSidebar(id, anchorEl) {
     const schedParts = [];
     if (due) schedParts.push(due.text);
     if (recurLabel) schedParts.push('↻ ' + recurLabel + (dayLabels ? ' · ' + dayLabels : ''));
-    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${id}, this)" title="Edit schedule">${calIconSvg} ${schedParts.join(' · ')} <span class="pill-x" onclick="event.stopPropagation(); cardClearSchedule(${id})">✕</span></span>`;
+    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${qid(id)}, this)" title="Edit schedule">${calIconSvg} ${schedParts.join(' · ')} <span class="pill-x" onclick="event.stopPropagation(); cardClearSchedule(${qid(id)})">✕</span></span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${id}, this)" title="Set date / repeat">${calIconSvg} Schedule</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date / repeat">${calIconSvg} Schedule</span>`;
   }
 
   // Checklist pill
   const hasChecklist = task.notes && /^\[ \] |^\[x\] /m.test(task.notes);
-  pillsHtml += `<span class="notes-card-pill${hasChecklist ? ' active' : ''}" onclick="toggleChecklistLines(${id})" title="Add checklist">${checkboxIconSvg} List</span>`;
+  pillsHtml += `<span class="notes-card-pill${hasChecklist ? ' active' : ''}" onclick="toggleChecklistLines(${qid(id)})" title="Add checklist">${checkboxIconSvg} List</span>`;
 
   // Project pill
-  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${id})" title="Toggle project mode">${projectIconSvg} Project</span>`;
+  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${qid(id)})" title="Toggle project mode">${projectIconSvg} Project</span>`;
 
   // Track pill — available on any task
   const hasTime = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
-  pillsHtml += `<span class="notes-card-pill${hasTime ? ' active' : ''}" onclick="toggleTimeTracking(${id})" title="Track time">${trackIconSvg} Track</span>`;
+  pillsHtml += `<span class="notes-card-pill${hasTime ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
 
   // Build progress bar (only for projects with checklist items)
   const progressHtml = renderProgressBarHtml(task);
@@ -2415,7 +2420,7 @@ function refreshSidebarMeta() {
   if (task.today) {
     pillsHtml += `<span class="notes-card-pill active" title="In Today list">${sunIconSvg} Today</span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardVoteUp(${id})" title="Add to Today">${sunIconSvg} Today</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="cardVoteUp(${qid(id)})" title="Add to Today">${sunIconSvg} Today</span>`;
   }
   // Unified schedule pill
   const hasSchedule = due || recurLabel;
@@ -2423,21 +2428,21 @@ function refreshSidebarMeta() {
     const schedParts = [];
     if (due) schedParts.push(due.text);
     if (recurLabel) schedParts.push('↻ ' + recurLabel + (dayLabels ? ' · ' + dayLabels : ''));
-    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${id}, this)" title="Edit schedule">${calIconSvg} ${schedParts.join(' · ')} <span class="pill-x" onclick="event.stopPropagation(); cardClearSchedule(${id})">✕</span></span>`;
+    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${qid(id)}, this)" title="Edit schedule">${calIconSvg} ${schedParts.join(' · ')} <span class="pill-x" onclick="event.stopPropagation(); cardClearSchedule(${qid(id)})">✕</span></span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${id}, this)" title="Set date / repeat">${calIconSvg} Schedule</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date / repeat">${calIconSvg} Schedule</span>`;
   }
 
   // Checklist pill
   const hasChecklist2 = task.notes && /^\[ \] |^\[x\] /m.test(task.notes);
-  pillsHtml += `<span class="notes-card-pill${hasChecklist2 ? ' active' : ''}" onclick="toggleChecklistLines(${id})" title="Add checklist">${checkboxIconSvg} List</span>`;
+  pillsHtml += `<span class="notes-card-pill${hasChecklist2 ? ' active' : ''}" onclick="toggleChecklistLines(${qid(id)})" title="Add checklist">${checkboxIconSvg} List</span>`;
 
   // Project pill
-  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${id})" title="Toggle project mode">${projectIconSvg} Project</span>`;
+  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${qid(id)})" title="Toggle project mode">${projectIconSvg} Project</span>`;
 
   // Track pill
   const hasTime2 = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
-  pillsHtml += `<span class="notes-card-pill${hasTime2 ? ' active' : ''}" onclick="toggleTimeTracking(${id})" title="Track time">${trackIconSvg} Track</span>`;
+  pillsHtml += `<span class="notes-card-pill${hasTime2 ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
 
   const pillsContainer = notesCardEl.querySelector('.notes-card-pills');
   if (pillsContainer) pillsContainer.innerHTML = pillsHtml;
