@@ -68,10 +68,9 @@ window.TinyApeDB = {
   _mapJsTaskToDb(jsTask) {
     if (!jsTask) return null;
 
-    return {
-      id: jsTask.id,
+    // Only include columns that exist in the Supabase tasks table
+    const mapped = {
       title: jsTask.title,
-      category: jsTask.category,
       today: jsTask.today,
       today_order: jsTask.todayOrder,
       done: jsTask.done,
@@ -79,17 +78,17 @@ window.TinyApeDB = {
       recurring: jsTask.recurring,
       recur_days: jsTask.recurDays,
       due_date: jsTask.dueDate,
-      project_id: jsTask.projectId,
       notes: jsTask.notes,
       drawer: jsTask.drawer,
       drawer_category: jsTask.drawerCategory,
       is_project: jsTask.isProject,
-      track_time: jsTask.trackTime || false,
       project_order: jsTask.projectOrder,
-      time_sessions: jsTask.timeSessions,
-      killed_at: jsTask.killedAt,
-      user_id: jsTask.userId
+      killed_at: jsTask.killedAt
     };
+    // Include id and user_id only if present (not for new inserts)
+    if (jsTask.id && typeof jsTask.id === 'string') mapped.id = jsTask.id;
+    if (jsTask.userId) mapped.user_id = jsTask.userId;
+    return mapped;
   },
 
   /**
