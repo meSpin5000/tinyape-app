@@ -938,11 +938,7 @@ function renderAddModalPills() {
   const effectiveDate = store.selectedDueDate || getDefaultDueDate();
   const dl = formatDueDate(effectiveDate);
   const dateLabel = dl ? dl.text : effectiveDate;
-  const recurPart = store.selectedRecurring
-    ? ' · ↻ ' + (store.selectedRecurDays.length
-        ? store.selectedRecurDays.map(d => dayShort[d]).join(', ')
-        : store.selectedRecurring)
-    : '';
+  const recurPart = store.selectedRecurring ? ' · ↻' : '';
   const isCustomDate = store.selectedDueDate || store.selectedRecurring || store.selectedRecurDays.length;
 
   let html = '';
@@ -2272,7 +2268,7 @@ function openNotesSidebar(id, anchorEl) {
   if (hasSchedule) {
     const schedParts = [];
     if (due) schedParts.push(due.text);
-    if (recurLabel) schedParts.push('↻ ' + recurLabel + (dayLabels ? ' · ' + dayLabels : ''));
+    if (recurLabel) schedParts.push('↻');
     pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${qid(id)}, this)" title="Edit schedule">${calIconSvg} ${schedParts.join(' · ')} <span class="pill-x" onclick="event.stopPropagation(); cardClearSchedule(${qid(id)})">✕</span></span>`;
   } else {
     pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date / repeat">${calIconSvg} Schedule</span>`;
@@ -2297,7 +2293,7 @@ function openNotesSidebar(id, anchorEl) {
 
   card.innerHTML = `
     <div class="notes-card-header">
-      <span class="notes-card-title">${task.title}</span>
+      <span class="notes-card-title" contenteditable="true" id="notesTitleEditable" spellcheck="false">${escHtml(task.title)}</span>
       <button class="notes-card-close" onclick="closeNotesCard()">✕</button>
     </div>
     ${progressHtml}
@@ -2329,6 +2325,33 @@ function openNotesSidebar(id, anchorEl) {
 
   document.body.appendChild(card);
   notesCardEl = card;
+
+  // Wire up title editing
+  const titleEl = card.querySelector('#notesTitleEditable');
+  titleEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); titleEl.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); titleEl.blur(); }
+  });
+  titleEl.addEventListener('blur', () => {
+    const newTitle = titleEl.textContent.trim();
+    if (newTitle && newTitle !== task.title) {
+      task.title = newTitle;
+      render();
+      // Persist to Supabase via sync layer
+      if (window.TinyApeDB) {
+        window.TinyApeDB.saveTask(task).catch(err =>
+          console.error('Sync error (title edit):', err));
+      }
+    } else if (!newTitle) {
+      titleEl.textContent = task.title; // revert if empty
+    }
+  });
+  // Prevent paste from inserting rich text
+  titleEl.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text.replace(/\n/g, ' '));
+  });
 
   // Wire up contenteditable events
   const editable = card.querySelector('#notesEditable');
@@ -2384,11 +2407,23 @@ function autoGrowTextarea(el) {
 
 function closeNotesCard(skipRender) {
   if (notesCardEl && currentNotesTaskId !== null) {
+    const task = store.tasks.find(t => t.id === currentNotesTaskId);
+    // Save title if edited
+    const titleEl = notesCardEl.querySelector('#notesTitleEditable');
+    if (titleEl && task) {
+      const newTitle = titleEl.textContent.trim();
+      if (newTitle && newTitle !== task.title) {
+        task.title = newTitle;
+        if (window.TinyApeDB) {
+          window.TinyApeDB.saveTask(task).catch(err =>
+            console.error('Sync error (title edit on close):', err));
+        }
+      }
+    }
     // Save contenteditable content before destroying the card
     const editable = notesCardEl.querySelector('#notesEditable');
-    if (editable) {
-      const task = store.tasks.find(t => t.id === currentNotesTaskId);
-      if (task) task.notes = notesHtmlToText(editable);
+    if (editable && task) {
+      task.notes = notesHtmlToText(editable);
     }
     notesCardEl.remove();
     notesCardEl = null;
@@ -2427,7 +2462,7 @@ function refreshSidebarMeta() {
   if (hasSchedule) {
     const schedParts = [];
     if (due) schedParts.push(due.text);
-    if (recurLabel) schedParts.push('↻ ' + recurLabel + (dayLabels ? ' · ' + dayLabels : ''));
+    if (recurLabel) schedParts.push('↻');
     pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${qid(id)}, this)" title="Edit schedule">${calIconSvg} ${schedParts.join(' · ')} <span class="pill-x" onclick="event.stopPropagation(); cardClearSchedule(${qid(id)})">✕</span></span>`;
   } else {
     pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date / repeat">${calIconSvg} Schedule</span>`;
