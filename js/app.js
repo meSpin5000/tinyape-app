@@ -666,12 +666,18 @@ function updateCounts() {
 }
 
 function bumpCounter() {
-  if (typeof logCompletion === 'function') logCompletion();
+  console.log('[TinyApe] bumpCounter: start');
+  if (typeof logCompletion === 'function') {
+    console.log('[TinyApe] bumpCounter: calling logCompletion');
+    logCompletion();
+  }
   const counter = document.getElementById('dailyCounter');
+  console.log('[TinyApe] bumpCounter: counter element=', counter);
   counter.classList.remove('bump');
   // Force reflow to restart animation
   void counter.offsetWidth;
   counter.classList.add('bump');
+  console.log('[TinyApe] bumpCounter: done');
 }
 
 // ─── EVENT HANDLERS ───
@@ -731,8 +737,9 @@ function handleProjectComplete(id) {
 }
 
 function handleToggleDone(id) {
+  console.log('[TinyApe] handleToggleDone called with id:', id, typeof id);
   const row = document.querySelector(`.today-item[data-id="${id}"]`);
-  if (!row) return;
+  if (!row) { console.error('[TinyApe] No row found for id:', id); return; }
 
   // Red checkbox with white check — pops in
   const checkbox = row.querySelector('.checkbox');
@@ -745,10 +752,11 @@ function handleToggleDone(id) {
   setTimeout(() => {
     row.classList.add('fade-out');
     setTimeout(() => {
+      console.log('[TinyApe] Inner timeout firing — about to toggleDone + render + bump + spawn');
       api.toggleDone(id);
-      try { render(); } catch(e) { console.error('render error:', e); }
-      try { bumpCounter(); } catch(e) { console.error('bumpCounter error:', e); }
-      try { spawnCreature(); } catch(e) { console.error('spawnCreature error:', e); }
+      try { render(); console.log('[TinyApe] render() OK'); } catch(e) { console.error('[TinyApe] render error:', e); }
+      try { bumpCounter(); console.log('[TinyApe] bumpCounter() OK'); } catch(e) { console.error('[TinyApe] bumpCounter error:', e); }
+      try { spawnCreature(); console.log('[TinyApe] spawnCreature() OK'); } catch(e) { console.error('[TinyApe] spawnCreature error:', e); }
       // Notify about recurring respawn
       if (wasRecurring) {
         const respawned = store.tasks.find(t => t.title === task.title && !t.done && t.id !== id);
@@ -3875,6 +3883,7 @@ setInterval(() => { if (tooltipTarget) positionTooltip(); }, 50);
 
 // ─── Spawn on task completion ───
 function spawnCreature() {
+  console.log('[TinyApe] spawnCreature: start');
   // Daily reset
   const today = new Date().toDateString();
   if (today !== creatureSpawnDate) {
@@ -3888,6 +3897,7 @@ function spawnCreature() {
   if (creaturePool.length === 0) shuffleCreaturePool();
   const defIndex = creaturePool.pop();
   const def = CREATURE_DEFS[defIndex];
+  console.log('[TinyApe] spawnCreature: defIndex=', defIndex, 'def=', def?.friend);
   showUnlockBanner(def);
 
   const canvas = document.createElement('canvas');
@@ -3959,8 +3969,11 @@ const completionLog = [];
 
 // Log a completion event (called alongside bumpCounter)
 function logCompletion() {
+  console.log('[TinyApe] logCompletion: pushing event, completionLog length before:', completionLog.length);
   completionLog.push({ ts: new Date().toISOString() });
+  console.log('[TinyApe] logCompletion: calling renderHallOfFame, completionLog length now:', completionLog.length);
   renderHallOfFame();
+  console.log('[TinyApe] logCompletion: done');
 }
 
 function getMonday(d) {
