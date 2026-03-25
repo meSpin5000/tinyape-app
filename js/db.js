@@ -221,7 +221,10 @@ window.TinyApeDB = {
 
       let result;
 
-      if (task.id) {
+      // Local-only tasks have integer IDs; DB tasks have UUID strings
+      const isDbTask = task.id && typeof task.id === 'string';
+
+      if (isDbTask) {
         // Update existing task
         const { data, error } = await window.supabase
           .from('tasks')
@@ -457,10 +460,10 @@ window.TinyApeDB = {
 
         result = data;
       } else {
-        // Insert new category
+        // Insert new category (upsert to avoid conflict if it already exists)
         const { data, error } = await window.supabase
           .from('drawer_categories')
-          .insert([catData])
+          .upsert([catData], { onConflict: 'user_id,key' })
           .select();
 
         if (error) {

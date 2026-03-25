@@ -2293,61 +2293,48 @@ function openNotesSidebar(id, anchorEl) {
   const editable = card.querySelector('#notesEditable');
   editable.addEventListener('input', () => saveCurrentNotes());
   editable.addEventListener('keydown', handleNotesKeydown);
-  // Safety net: if user types while cursor is before a checkbox, move it first
-  editable.addEventListener('beforeinput', function(e) {
-    if (e.inputType !== 'insertText' && e.inputType !== 'insertParagraph') return;
-    const sel = window.getSelection();
-    if (!sel.rangeCount) return;
-    const node = sel.getRangeAt(0).startContainer;
-    const inTextSpan = node.nodeType === Node.TEXT_NODE
-      ? node.parentElement.closest('.notes-line-text')
-      : node.closest && node.closest('.notes-line-text');
-    if (!inTextSpan) {
+  // Prevent Tab from placing cursor before checkboxes.
+  // Intercept Tab on the card so we control where cursor lands.
+  card.addEventListener('keydown', function(e) {
+    if (e.key !== 'Tab' || e.shiftKey) return;
+    // If editable has checklist lines and isn't currently focused, hijack Tab
+    const firstLine = editable.querySelector('.notes-line');
+    if (firstLine && document.activeElement !== editable) {
+      e.preventDefault();
+      editable.focus();
       const firstSpan = editable.querySelector('.notes-line-text');
       if (firstSpan) {
-        e.preventDefault();
         const range = document.createRange();
+        const sel = window.getSelection();
         range.selectNodeContents(firstSpan);
         range.collapse(true);
         sel.removeAllRanges();
         sel.addRange(range);
-        // Re-insert the character at the corrected position
-        if (e.inputType === 'insertText' && e.data) {
-          document.execCommand('insertText', false, e.data);
-        }
       }
     }
   });
-  // On focus (including Tab), if content starts with a checklist line,
-  // force cursor into the first text span so it never lands before a checkbox.
-  // Use multiple timing attempts because browsers finalize focus position
-  // at unpredictable times (rAF alone is not reliable).
-  editable.addEventListener('focus', function onEditableFocus() {
-    const firstChild = editable.firstElementChild;
-    if (firstChild && firstChild.classList.contains('notes-line')) {
-      const fixCursor = () => {
-        const sel = window.getSelection();
-        if (!sel.rangeCount) return;
-        const r = sel.getRangeAt(0);
-        const node = r.startContainer;
-        const inTextSpan = node.nodeType === Node.TEXT_NODE
-          ? node.parentElement.closest('.notes-line-text')
-          : node.closest && node.closest('.notes-line-text');
-        if (!inTextSpan) {
-          const firstSpan = editable.querySelector('.notes-line-text');
-          if (firstSpan) {
-            const range = document.createRange();
-            range.selectNodeContents(firstSpan);
-            range.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(range);
-          }
+  // Also fix cursor on any focus (click, programmatic) if it lands before a checkbox
+  editable.addEventListener('focus', function() {
+    setTimeout(() => {
+      const firstLine = editable.querySelector('.notes-line');
+      if (!firstLine) return;
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const node = sel.getRangeAt(0).startContainer;
+      const inTextSpan = node.nodeType === Node.TEXT_NODE
+        ? node.parentElement.closest('.notes-line-text')
+        : node.closest && node.closest('.notes-line-text');
+      if (!inTextSpan) {
+        const firstSpan = editable.querySelector('.notes-line-text');
+        if (firstSpan) {
+          const range = document.createRange();
+          range.selectNodeContents(firstSpan);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
         }
-      };
-      requestAnimationFrame(fixCursor);
-      setTimeout(fixCursor, 0);
-      setTimeout(fixCursor, 20);
-    }
+      }
+    }, 0);
   });
   setTimeout(() => {
     editable.focus();
@@ -3722,9 +3709,10 @@ function creatureWalkTo(c, target, onDone) {
   const step = () => {
     const headerWNow = document.querySelector('header').offsetWidth;
     const cw = getCreatureW(c);
-    const nextX = Math.max(0, Math.min(c.x + dx * 1, headerWNow - cw - 10));
-    // If we hit the edge, stop
-    if (nextX <= 0 || nextX >= headerWNow - cw - 10) {
+    const maxX = headerWNow - cw - 10;
+    const nextX = Math.max(0, Math.min(c.x + dx * 1, maxX));
+    // If we hit the edge AND are moving away from target, stop
+    if ((nextX <= 0 && dx < 0) || (nextX >= maxX && dx > 0)) {
       c.el.classList.remove('walking');
       c.state = 'idle';
       creatureIdle(c);
@@ -3891,7 +3879,8 @@ function spawnCreature() {
   canvas.height = 16;
   canvas.className = 'pixel-creature';
   const header = document.querySelector('header');
-  const startX = header.offsetWidth + 10;
+  // Start just inside the right edge (header has overflow:hidden)
+  const startX = header.offsetWidth - 25;
   canvas.style.left = startX + 'px';
   header.appendChild(canvas);
   renderSprite(canvas, def, isCreatureDark());
