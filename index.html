@@ -637,6 +637,21 @@ function startRealtimeSync() {
     renderDrawer();
   });
 
+  // ─── CREATURE UNLOCKS (cross-device sync) ───
+  channel.on('postgres_changes', {
+    event: 'INSERT', schema: 'public', table: 'creature_unlocks'
+  }, (payload) => {
+    const row = payload.new;
+    console.log('[Realtime] Creature unlock INSERT:', row.creature_index);
+    // Only restore if it's from today and restoreCreaturesFromUnlocks exists
+    if (typeof restoreCreaturesFromUnlocks === 'function') {
+      restoreCreaturesFromUnlocks([{
+        creatureIndex: row.creature_index,
+        unlockedAt: row.unlocked_at || row.created_at
+      }]);
+    }
+  });
+
   // ─── SUBSCRIBE ───
   channel.subscribe((status) => {
     if (status === 'SUBSCRIBED') {

@@ -789,6 +789,9 @@
   /* Swipe backgrounds — hidden on desktop */
   .swipe-delete-bg { display: none; }
   .swipe-demote-bg { display: none; }
+  /* Hide swipe backgrounds during task completion animation */
+  .swipe-row-wrap:has(.completing-row) .swipe-delete-bg,
+  .swipe-row-wrap:has(.completing-row) .swipe-demote-bg { visibility: hidden; }
 
   /* Mobile inline drawer section — hidden on desktop */
   .mobile-drawer-section { display: none; }
