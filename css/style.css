@@ -704,9 +704,21 @@
     width: 28px;
     text-align: center;
     flex-shrink: 0;
+    cursor: pointer;
+    position: relative;
+  }
+  .today-number-arrow {
+    display: none;
+    font-size: 16px;
+  }
+  .today-item:not(.done) .today-number:hover .today-number-text {
+    display: none;
+  }
+  .today-item:not(.done) .today-number:hover .today-number-arrow {
+    display: inline;
   }
 
-  .today-item.done .today-number { color: var(--done-text); }
+  .today-item.done .today-number { color: var(--done-text); cursor: default; }
 
   /* Checkbox */
   .checkbox {
@@ -774,8 +786,9 @@
 
   /* Drawer pill in notes card — now visible on all breakpoints */
 
-  /* Swipe-to-delete — hidden on desktop */
+  /* Swipe backgrounds — hidden on desktop */
   .swipe-delete-bg { display: none; }
+  .swipe-demote-bg { display: none; }
 
   /* Mobile inline drawer section — hidden on desktop */
   .mobile-drawer-section { display: none; }
@@ -3336,6 +3349,28 @@
       transform: translateX(-100%) !important;
       opacity: 0;
     }
+    /* Swipe-right to demote (Today → On Deck) */
+    .swipe-demote-bg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 80px;
+      background: var(--accent-blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: Inter, sans-serif;
+      letter-spacing: 0.3px;
+    }
+    .swipe-row-wrap.demoting > .today-item {
+      transition: transform 0.25s ease, opacity 0.25s ease;
+      transform: translateX(100%) !important;
+      opacity: 0;
+    }
 
     /* On Deck items */
     .backlog-item {
@@ -3397,12 +3432,19 @@
     }
     .add-modal-pills {
       padding: 10px 16px;
-      gap: 6px;
+      gap: 5px;
+      flex-wrap: nowrap;
     }
     .add-modal-pill {
-      font-size: 12px;
+      flex: 1;
+      min-width: 0;
+      justify-content: center;
+      font-size: 11px;
       height: 30px;
-      padding: 0 10px;
+      padding: 0 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .add-modal-actions {
       padding: 10px 16px 14px;
@@ -3471,17 +3513,25 @@
       width: 100%;
     }
     .notes-card-pills {
-      gap: 6px;
-      padding: 16px 20px;
+      gap: 5px;
+      padding: 0;  /* card already has padding — no double inset */
+      flex-wrap: nowrap;
     }
     .notes-card-pill {
-      padding: 6px 10px;
-      font-size: 12px;
+      flex: 1;
+      min-width: 0;
+      justify-content: center;
+      padding: 6px 4px;
+      font-size: 11px;
       height: 30px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .notes-card-pill svg {
-      width: 13px;
-      height: 13px;
+      width: 12px;
+      height: 12px;
+      flex-shrink: 0;
     }
 
     /* Add modal pill SVGs on mobile */

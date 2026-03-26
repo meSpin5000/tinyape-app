@@ -319,6 +319,7 @@ const trackIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none
 const checkboxIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/></svg>`;
 const projectIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><polyline points="8,4 8,8 11,9.5"/></svg>`;
 const sunIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1.5" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="14.5" y2="8"/><line x1="3.4" y1="3.4" x2="4.5" y2="4.5"/><line x1="11.5" y1="11.5" x2="12.6" y2="12.6"/><line x1="3.4" y1="12.6" x2="4.5" y2="11.5"/><line x1="11.5" y1="4.5" x2="12.6" y2="3.4"/></svg>`;
+const onDeckIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="2" x2="8" y2="11"/><polyline points="4,8 8,12 12,8"/></svg>`;
 
 
 const celebrationMessages = [
@@ -382,7 +383,8 @@ function render() {
   if (window.innerWidth <= 640) initSwipeToDelete();
 }
 
-// ─── SWIPE TO DELETE (mobile) ───
+// ─── SWIPE GESTURES (mobile) ───
+// Left-swipe: delete (all sections). Right-swipe: demote to On Deck (Today only).
 function initSwipeToDelete() {
   const rows = document.querySelectorAll('.today-item:not(.swipe-ready), .backlog-item:not(.swipe-ready)');
   rows.forEach(row => {
@@ -393,38 +395,49 @@ function initSwipeToDelete() {
     const taskId = row.getAttribute('data-id');
     if (!taskId) return;
 
-    // Determine if this is a drawer task
+    // Determine context
     const isDrawerTask = !!row.closest('#mobileDrawerList');
+    const isTodayTask = !!row.closest('#todayList');
 
     // Wrap in swipe container
     const wrap = document.createElement('div');
     wrap.className = 'swipe-row-wrap';
-    wrap.innerHTML = '<div class="swipe-delete-bg">Delete</div>';
+    wrap.innerHTML = '<div class="swipe-delete-bg">Delete</div>'
+      + (isTodayTask ? '<div class="swipe-demote-bg">On Deck</div>' : '');
     row.parentNode.insertBefore(wrap, row);
     wrap.appendChild(row);
 
-    let startX = 0, currentX = 0, swiping = false;
+    let startX = 0, currentX = 0, swiping = false, swipeDir = null;
     const THRESHOLD = 70;
 
     row.addEventListener('touchstart', (e) => {
-      // Don't interfere with checkbox taps, vote buttons, or drag handles
       const tag = e.target.closest('.checkbox, .vote-btn, .drag-handle, button');
       if (tag) return;
       startX = e.touches[0].clientX;
       currentX = startX;
       swiping = false;
+      swipeDir = null;
     }, { passive: true });
 
     row.addEventListener('touchmove', (e) => {
       if (startX === 0) return;
       currentX = e.touches[0].clientX;
       const dx = currentX - startX;
-      // Only swipe left
-      if (dx < -10) {
+
+      if (!swiping && Math.abs(dx) > 10) {
         swiping = true;
+        swipeDir = dx < 0 ? 'left' : 'right';
         wrap.classList.add('swiping');
-        const clamped = Math.max(dx, -120);
-        row.style.transform = `translateX(${clamped}px)`;
+      }
+
+      if (swiping) {
+        if (swipeDir === 'left') {
+          const clamped = Math.max(dx, -120);
+          row.style.transform = `translateX(${clamped}px)`;
+        } else if (swipeDir === 'right' && isTodayTask) {
+          const clamped = Math.min(dx, 120);
+          row.style.transform = `translateX(${clamped}px)`;
+        }
       }
     }, { passive: true });
 
@@ -433,7 +446,7 @@ function initSwipeToDelete() {
       wrap.classList.remove('swiping');
       const dx = currentX - startX;
 
-      if (dx < -THRESHOLD) {
+      if (swipeDir === 'left' && dx < -THRESHOLD) {
         // Delete
         wrap.classList.add('deleting');
         setTimeout(() => {
@@ -443,6 +456,12 @@ function initSwipeToDelete() {
             handleDeleteTask(taskId);
           }
         }, 250);
+      } else if (swipeDir === 'right' && isTodayTask && dx > THRESHOLD) {
+        // Demote to On Deck
+        wrap.classList.add('demoting');
+        setTimeout(() => {
+          handleRemoveFromToday(taskId);
+        }, 250);
       } else {
         // Snap back
         row.style.transform = '';
@@ -450,6 +469,7 @@ function initSwipeToDelete() {
       startX = 0;
       currentX = 0;
       swiping = false;
+      swipeDir = null;
     }, { passive: true });
   });
 }
@@ -479,7 +499,7 @@ function todayItemHtml(t) {
   return `
     <div class="today-item" data-id="${t.id}">
       <span class="drag-handle" title="Drag to reorder">⠿</span>
-      <span class="today-number">${t.todayOrder}</span>
+      <span class="today-number" onclick="handleRemoveFromToday(${qid(t.id)})" title="Move to On Deck"><span class="today-number-text">${t.todayOrder}</span><span class="today-number-arrow">↓</span></span>
       <div class="checkbox" onclick="handleToggleDone(${qid(t.id)})"></div>
       <div class="task-content">
         <div class="task-title task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</div>
@@ -2334,7 +2354,7 @@ function renderSchedulePopover() {
     closeSchedulePopover();
     render();
     if (currentNotesTaskId === task.id) refreshSidebarMeta();
-    showToast('Schedule cleared');
+    showToast('Date cleared');
   });
 
   // OK
@@ -2578,9 +2598,9 @@ function openNotesSidebar(id, anchorEl) {
     const schedParts = [];
     if (due) schedParts.push(due.text);
     if (recurLabel) schedParts.push('↻');
-    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${qid(id)}, this)" title="Edit schedule">${calIconSvg} ${schedParts.join(' · ')} <span class="pill-x" onclick="event.stopPropagation(); cardClearSchedule(${qid(id)})">✕</span></span>`;
+    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${qid(id)}, this)" title="Edit date">${calIconSvg} ${schedParts.join(' · ')}</span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date / repeat">${calIconSvg} Schedule</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date">${calIconSvg} Date</span>`;
   }
 
   // Checklist pill
@@ -2594,8 +2614,10 @@ function openNotesSidebar(id, anchorEl) {
   const hasTime = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
   pillsHtml += `<span class="notes-card-pill${hasTime ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
 
-  // Drawer pill — shown for non-drawer tasks (move TO drawer)
-  if (!task.drawer) {
+  // Contextual 5th pill: "On Deck" for Today tasks, "Drawer" for others
+  if (task.today) {
+    pillsHtml += `<span class="notes-card-pill" onclick="handleRemoveFromToday(${qid(id)}); closeNotesCard(true);" title="Move to On Deck">${onDeckIconSvg} On Deck</span>`;
+  } else if (!task.drawer) {
     pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} Drawer</span>`;
   }
 
@@ -2787,9 +2809,9 @@ function refreshSidebarMeta() {
     const schedParts = [];
     if (due) schedParts.push(due.text);
     if (recurLabel) schedParts.push('↻');
-    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${qid(id)}, this)" title="Edit schedule">${calIconSvg} ${schedParts.join(' · ')} <span class="pill-x" onclick="event.stopPropagation(); cardClearSchedule(${qid(id)})">✕</span></span>`;
+    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${qid(id)}, this)" title="Edit date">${calIconSvg} ${schedParts.join(' · ')}</span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date / repeat">${calIconSvg} Schedule</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date">${calIconSvg} Date</span>`;
   }
 
   // Checklist pill
@@ -2803,8 +2825,10 @@ function refreshSidebarMeta() {
   const hasTime2 = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
   pillsHtml += `<span class="notes-card-pill${hasTime2 ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
 
-  // Drawer pill — shown for non-drawer tasks
-  if (!task.drawer) {
+  // Contextual 5th pill: "On Deck" for Today tasks, "Drawer" for others
+  if (task.today) {
+    pillsHtml += `<span class="notes-card-pill" onclick="handleRemoveFromToday(${qid(id)}); closeNotesCard(true);" title="Move to On Deck">${onDeckIconSvg} On Deck</span>`;
+  } else if (!task.drawer) {
     pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} Drawer</span>`;
   }
 
@@ -3246,7 +3270,7 @@ function cardClearSchedule(id) {
   task.recurDays = null;
   render();
   refreshSidebarMeta();
-  showToast('Schedule cleared');
+  showToast('Date cleared');
 }
 
 function cardClearDate(id) {
