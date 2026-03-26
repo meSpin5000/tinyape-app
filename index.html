@@ -647,26 +647,6 @@ function startRealtimeSync() {
     renderDrawer();
   });
 
-  // ─── CREATURE UNLOCKS (cross-device sync) ───
-  channel.on('postgres_changes', {
-    event: 'INSERT', schema: 'public', table: 'creature_unlocks'
-  }, (payload) => {
-    const row = payload.new;
-    console.log('[Realtime] Creature unlock INSERT:', row.creature_index);
-    // Skip if this creature is already displayed (same-device echo)
-    if (typeof headerCreatures !== 'undefined' &&
-        headerCreatures.some(c => c.defIndex === row.creature_index)) {
-      console.log('[Realtime] Creature already displayed, skipping');
-      return;
-    }
-    if (typeof restoreCreaturesFromUnlocks === 'function') {
-      restoreCreaturesFromUnlocks([{
-        creatureIndex: row.creature_index,
-        unlockedAt: row.unlocked_at || row.created_at
-      }]);
-    }
-  });
-
   // ─── SUBSCRIBE ───
   channel.subscribe((status) => {
     if (status === 'SUBSCRIBED') {
@@ -707,19 +687,19 @@ document.addEventListener('visibilitychange', async () => {
     if (!_realtimeConnected) {
       const changed = await refreshFromSupabase(true);
       setDate();
-      if (changed) { render(); renderHallOfFame(); }
+      if (changed) {
+        render(); renderHallOfFame();
+        // Restore any creature unlocks fetched during refresh
+        if (window._pendingCreatureUnlocks && typeof restoreCreaturesFromUnlocks === 'function') {
+          restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
+          delete window._pendingCreatureUnlocks;
+        }
+      }
       // Try to reconnect realtime
       stopRealtimeSync();
       startRealtimeSync();
     } else {
-      // Even with realtime connected, fetch creature unlocks we may have missed
-      await refreshFromSupabase(true);
       setDate();
-    }
-    // Restore any new creature unlocks fetched during refresh
-    if (window._pendingCreatureUnlocks && typeof restoreCreaturesFromUnlocks === 'function') {
-      restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
-      delete window._pendingCreatureUnlocks;
     }
   }
 });
