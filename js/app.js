@@ -801,10 +801,17 @@ function handleUncomplete(id) {
   if (completionLog.length > 0) {
     completionLog.pop();
   }
-  // Remove from DB
+  // Remove from DB — tracked through sync guard so refreshFromSupabase
+  // won't pull the not-yet-deleted event back and bounce the counter
   if (window.TinyApeDB && window.TinyApeDB.deleteLatestCompletionEvent) {
-    window.TinyApeDB.deleteLatestCompletionEvent().catch(err =>
-      console.error('Error removing completion event:', err));
+    if (window._trackAsyncOp) {
+      window._trackAsyncOp(() =>
+        window.TinyApeDB.deleteLatestCompletionEvent()
+      ).catch(err => console.error('Error removing completion event:', err));
+    } else {
+      window.TinyApeDB.deleteLatestCompletionEvent().catch(err =>
+        console.error('Error removing completion event:', err));
+    }
   }
   render();
   renderHallOfFame();

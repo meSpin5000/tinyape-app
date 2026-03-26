@@ -76,6 +76,24 @@
 
   // Get IDs of tasks that only exist locally (never saved to DB)
   // These have local integer IDs rather than DB UUIDs
+  // Track an arbitrary async operation through the sync guard system.
+  // Bumps _lastMutationTime and _inFlightSaves so _isSafeToSync() returns
+  // false until the operation completes — prevents refreshFromSupabase from
+  // overwriting local state while a DB mutation (e.g. delete) is in flight.
+  window._trackAsyncOp = function(promiseFn) {
+    _lastMutationTime = Date.now();
+    _inFlightSaves++;
+    return promiseFn().then(result => {
+      _inFlightSaves--;
+      _lastMutationTime = Date.now();
+      return result;
+    }).catch(err => {
+      _inFlightSaves--;
+      _lastMutationTime = Date.now();
+      throw err;
+    });
+  };
+
   window._getUnsavedTaskIds = function() {
     const unsaved = new Set();
     // Local-only tasks have integer IDs (from store.nextId)
