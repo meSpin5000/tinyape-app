@@ -705,7 +705,14 @@ document.addEventListener('visibilitychange', async () => {
       stopRealtimeSync();
       startRealtimeSync();
     } else {
+      // Even with realtime connected, fetch creature unlocks we may have missed
+      await refreshFromSupabase(true);
       setDate();
+    }
+    // Restore any new creature unlocks fetched during refresh
+    if (window._pendingCreatureUnlocks && typeof restoreCreaturesFromUnlocks === 'function') {
+      restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
+      delete window._pendingCreatureUnlocks;
     }
   }
 });
