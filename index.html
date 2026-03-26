@@ -601,12 +601,19 @@ function startRealtimeSync() {
   // ─── COMPLETION EVENTS ───
   channel.on('postgres_changes', {
     event: 'INSERT', schema: 'public', table: 'completion_events'
-  }, (payload) => {
+  }, async (payload) => {
     if (window._isCompletionEcho && window._isCompletionEcho()) return;
     const row = payload.new;
     console.log('[Realtime] Completion INSERT');
     completionLog.push({ ts: row.created_at, id: row.id });
     renderHallOfFame();
+    // A completion on another device means a creature was spawned — fetch and restore it
+    try {
+      const unlocks = await TinyApeDB.loadCreatureUnlocks();
+      if (unlocks && unlocks.length > 0 && typeof restoreCreaturesFromUnlocks === 'function') {
+        restoreCreaturesFromUnlocks(unlocks);
+      }
+    } catch(e) { console.error('Creature sync error:', e); }
   });
 
   channel.on('postgres_changes', {

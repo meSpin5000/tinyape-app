@@ -4385,8 +4385,12 @@ function restoreCreaturesFromUnlocks(unlocks) {
   const header = document.querySelector('header');
   if (!header) return;
 
+  // Filter out creatures already displayed in the header
+  const displayedIndices = headerCreatures.map(c => c.defIndex);
+
   todayUnlocks.forEach((unlock, i) => {
     const defIndex = unlock.creatureIndex;
+    if (displayedIndices.includes(defIndex)) return;  // already on screen
     const def = CREATURE_DEFS[defIndex];
     if (!def) return;
 
