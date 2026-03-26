@@ -222,6 +222,17 @@
   </div>
   <div class="backlog-list" id="backlogList"></div>
 
+  <!-- DRAWER (inline section for mobile) -->
+  <div class="mobile-drawer-section" id="mobileDrawerSection">
+    <div class="section-header">
+      <h2 class="section-title">Drawer <span class="mobile-drawer-count" id="mobileDrawerCount"></span></h2>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="section-add-btn" onclick="openAddModal('drawer')" title="Add to drawer">+ Add</button>
+      </div>
+    </div>
+    <div id="mobileDrawerList"></div>
+  </div>
+
   <!-- PROJECTS (hidden, data layer preserved) -->
   <div style="display:none;">
     <div class="section-header" style="margin-top:48px;">

@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>TinyApe - LOCAL PREVIEW</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .preview-banner {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #e52e0a;
+    color: #fff;
+    font-family: Inter, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 14px;
+    border-radius: 0 0 6px 6px;
+    z-index: 9999;
+    letter-spacing: 0.5px;
+    opacity: 0.85;
+  }
+</style>
+</head>
+<body data-theme="light">
+
+<div class="preview-banner">LOCAL PREVIEW — no sync</div>
+
+<!-- ─── MAIN APP (shown immediately, no auth) ─── -->
+<div id="appPage" style="display:block;">
+
+<div class="hall-of-fame" id="hallOfFame"></div>
+<div class="hof-modal-overlay" id="hofModalOverlay" onclick="closeHofModal()"></div>
+<div class="hof-modal" id="hofModal"><button class="hof-modal-close" onclick="closeHofModal()">✕</button><div id="hofModalContent"></div></div>
+
+<header style="position:sticky;top:0;z-index:100;">
+  <div class="logo">TinyApe</div>
+  <canvas class="pixel-ape" id="pixelApe" width="24" height="24"></canvas>
+  <div class="header-right">
+    <span class="date-display" id="dateDisplay"></span>
+    <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+      <svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <svg class="moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+  <!-- TODAY'S LIST -->
+  <div class="section-header" style="border-bottom:none; padding-bottom:0;">
+    <div class="daily-counter-wrap">
+      <div class="daily-counter" id="dailyCounter">0</div>
+      <div>
+        <h2 class="section-title">Today</h2>
+        <span class="daily-counter-label">completed today</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button class="section-add-btn" onclick="openAddModal('today')" title="Add to today">+ Add</button>
+    </div>
+  </div>
+  <div class="today-list" id="todayList"></div>
+
+  <!-- ADD TASK MODAL -->
+  <div class="add-modal-overlay" id="addModalOverlay" onclick="closeAddModal()"></div>
+  <div class="add-modal" id="addModal">
+    <div class="add-modal-header">
+      <span class="add-modal-title" id="addModalTitle">Add a task</span>
+      <button class="add-modal-close" onclick="closeAddModal()">✕</button>
+    </div>
+    <div class="add-modal-subtitle" id="addModalSubtitle"></div>
+    <input type="text" class="add-modal-input" id="addTaskInput" placeholder="What needs to be done?" autocomplete="off" />
+    <div class="add-modal-notes-wrap" id="addModalNotesWrap">
+      <div class="add-modal-notes" id="addTaskNotes" contenteditable="true" data-placeholder="Add notes…"></div>
+    </div>
+    <div class="add-modal-pills" id="addModalPills"></div>
+    <div class="add-modal-track-section" id="addModalTrackSection" style="display:none;">
+      <div class="time-section" style="margin:0;">
+        <div class="time-section-header">⏱ Time tracking enabled</div>
+        <div class="time-add-form" style="display:block; margin-top:8px;">
+          <div class="time-slider-row">
+            <input type="range" class="time-slider" id="addTrackSlider" min="15" max="480" step="15" value="30"
+                   oninput="document.getElementById('addTrackSliderLabel').textContent = formatMinutes(parseInt(this.value))">
+            <span class="time-slider-label" id="addTrackSliderLabel">30m</span>
+          </div>
+          <textarea class="time-note-input" id="addTrackNote" placeholder="What did you work on? (optional)" rows="2"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="add-modal-actions" id="addModalActions"></div>
+    <input type="date" id="hiddenDatePicker" onchange="handleDatePick(this.value)" style="position:absolute;opacity:0;pointer-events:none;" />
+  </div>
+
+  <!-- PROJECTS -->
+  <div id="projectsSection">
+    <div class="section-header" style="margin-top:28px;">
+      <h2 class="section-title">Projects</h2>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="section-add-btn" onclick="openAddModal('project')" title="Add project">+ Add</button>
+      </div>
+    </div>
+    <div id="projectsList"></div>
+    <div id="projectsEmpty" class="section-empty-hint">
+      Turn any task into a project to track progress and time
+    </div>
+  </div>
+
+  <!-- ON DECK -->
+  <div class="section-header">
+    <h2 class="section-title">On Deck <span style="font-size:10px; color:var(--text-muted); font-weight:400; font-style:italic; font-family:Inter,sans-serif; margin-left:4px; vertical-align:baseline;">[click to vote up]</span></h2>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button class="section-add-btn" onclick="openAddModal('ondeck')" title="Add task">+ Add</button>
+    </div>
+  </div>
+  <div class="backlog-list" id="backlogList"></div>
+
+  <!-- DRAWER (inline section for mobile) -->
+  <div class="mobile-drawer-section" id="mobileDrawerSection">
+    <div class="section-header">
+      <h2 class="section-title">Drawer <span class="mobile-drawer-count" id="mobileDrawerCount"></span></h2>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="section-add-btn" onclick="openAddModal('drawer')" title="Add to drawer">+ Add</button>
+      </div>
+    </div>
+    <div id="mobileDrawerList"></div>
+  </div>
+
+  <!-- PROJECTS (hidden, data layer preserved) -->
+  <div style="display:none;">
+    <div class="section-header" style="margin-top:48px;">
+      <h2 class="section-title">Projects</h2>
+    </div>
+    <div id="projectList"></div>
+  </div>
+
+  <!-- COMPLETED -->
+  <div id="completedSection" style="display:none;"><div id="completedList"></div></div>
+  <div id="killedSection" style="display:none;"><div id="killedList"></div></div>
+  <span id="completedAllTime" style="display:none;"></span>
+
+  <!-- Footer pills for Completed & Killed -->
+  <div class="archive-footer" id="archiveFooter">
+    <button class="archive-pill" id="completedPill" onclick="openArchivePopup('completed')" style="display:none;">
+      <span class="archive-pill-icon">✓</span> Completed <span class="archive-pill-count" id="completedPillCount"></span>
+    </button>
+    <button class="archive-pill killed" id="killedPill" onclick="openArchivePopup('killed')" style="display:none;">
+      <span class="archive-pill-icon">✕</span> Killed <span class="archive-pill-count" id="killedPillCount"></span>
+    </button>
+  </div>
+
+  <!-- Archive popup overlay -->
+  <div class="archive-popup-overlay" id="archivePopupOverlay" onclick="closeArchivePopup()"></div>
+  <div class="archive-popup" id="archivePopup">
+    <div class="archive-popup-header">
+      <span class="archive-popup-title" id="archivePopupTitle"></span>
+      <button class="archive-popup-close" onclick="closeArchivePopup()">✕</button>
+    </div>
+    <div class="archive-popup-list" id="archivePopupList"></div>
+  </div>
+
+  <!-- CATEGORIES (hidden) -->
+  <div style="display:none;" id="categoryAccordion"></div>
+
+  <footer style="text-align:center;padding:40px 0 0;font-size:10px;color:var(--text-muted);opacity:0.5;font-family:Inter,sans-serif;">
+    &copy; 2026 TinyApe &middot; Remember, tasking should be fun.
+  </footer>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<!-- DRAWER -->
+<div class="drawer-tab" id="drawerTab" onclick="toggleDrawer()">
+  <span style="display:flex;align-items:center;gap:4px;">Drawer</span>
+  <span class="drawer-tab-badge" id="drawerBadge"></span>
+</div>
+<div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer()"></div>
+<div class="drawer-panel" id="drawerPanel">
+  <div class="drawer-header">
+    <h2 class="section-title">Drawer</h2>
+    <button class="drawer-close" onclick="toggleDrawer()">✕</button>
+  </div>
+  <div style="margin-bottom:14px;">
+    <div style="display:flex;gap:6px;">
+      <input type="text" id="drawerAddInput" placeholder="Add to drawer…" style="flex:1;padding:7px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);font-size:13px;font-family:Inter,sans-serif;color:var(--text);outline:none;" />
+      <button onclick="addTaskFromDrawer()" style="padding:5px 12px;border-radius:4px;border:1px solid var(--border);background:var(--accent-red);color:#fff;font-size:12px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;">Add</button>
+    </div>
+    <div id="drawerAddNotesWrap" style="max-height:0;overflow:hidden;transition:max-height 0.3s ease,padding 0.3s ease;padding-top:0;">
+      <textarea id="drawerAddNotes" placeholder="Add notes…" style="width:100%;margin-top:8px;padding:7px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);font-size:12px;font-family:Inter,sans-serif;color:var(--text);outline:none;resize:none;height:50px;"></textarea>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+        <button class="drawer-cat-pill" id="drawerAddListBtn" onclick="toggleDrawerAddList()" style="font-size:10px;padding:2px 8px;">☐ List</button>
+        <button class="drawer-cat-pill" id="drawerAddCatBtn" onclick="cycleDrawerAddCategory()" style="font-size:10px;padding:2px 8px;">+ category</button>
+      </div>
+    </div>
+  </div>
+  <div class="drawer-cat-pills" id="drawerCatPills"></div>
+  <div id="drawerContent"></div>
+</div>
+<div class="unlock-banner" id="unlockBanner"><span class="bolt">&#9889;</span> <span id="unlockText"></span></div>
+<div class="creature-tooltip" id="creatureTooltip"></div>
+
+</div><!-- /appPage -->
+
+<!-- Load app.js only (no config, auth, db, sync) -->
+<script>
+// ─── STUB: No-op replacements for DB/sync functions ───
+// These prevent errors when app.js code tries to call sync/DB functions
+window.TinyApeDB = null;
+window._isEcho = function() { return false; };
+window._isCompletionEcho = function() { return false; };
+window._markCompletionWrite = function() {};
+window._trackAsyncOp = function(fn) { return fn ? fn() : Promise.resolve(); };
+window._isSafeToSync = function() { return true; };
+</script>
+
+<script src="js/app.js"></script>
+
+<script>
+// ─── SEED SAMPLE DATA ───
+(function() {
+  const today = new Date().toISOString().split('T')[0];
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0];
+
+  // Today tasks
+  store.tasks.push(
+    { id: 'p1', title: 'QBO - Pay Bills - All Orgs', category: '', today: true, todayOrder: 1, done: false, completedAt: null, recurring: 'weekly', recurDays: null, dueDate: yesterday, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p2', title: 'AGING reminders out', category: '', today: true, todayOrder: 2, done: false, completedAt: null, recurring: 'weekly', recurDays: null, dueDate: yesterday, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p3', title: 'Pay Austin and Holly', category: '', today: true, todayOrder: 3, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p4', title: 'Review quarterly report draft', category: '', today: true, todayOrder: 4, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: today, projectId: null, notes: 'Check figures against actuals\n[ ] Revenue section\n[ ] Expense section\n[ ] Cash flow', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p5', title: 'Call the accountant about Q1 filing', category: '', today: true, todayOrder: 5, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: today, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] }
+  );
+
+  // Completed tasks
+  store.tasks.push(
+    { id: 'p20', title: 'Send invoice to client', category: '', today: true, todayOrder: null, done: true, completedAt: new Date().toISOString(), recurring: null, recurDays: null, dueDate: today, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p21', title: 'Update team Slack channel', category: '', today: true, todayOrder: null, done: true, completedAt: new Date().toISOString(), recurring: null, recurDays: null, dueDate: today, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] }
+  );
+
+  // Projects
+  store.tasks.push(
+    { id: 'p10', title: 'DORIS updates', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '[ ] Update contact fields\n[ ] Add new report template\n[x] Fix login redirect', drawer: false, drawerCategory: null, isProject: true, trackTime: true, timeSessions: [{ date: twoDaysAgo, minutes: 45, note: 'Initial research' }] },
+    { id: 'p11', title: 'Website redesign', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '[ ] Wireframes\n[ ] Color palette\n[ ] Mobile mockups\n[x] Competitor analysis\n[x] Content audit', drawer: false, drawerCategory: null, isProject: true, trackTime: true, timeSessions: [{ date: twoDaysAgo, minutes: 120, note: 'Competitor research' }, { date: yesterday, minutes: 90, note: 'Content audit' }] }
+  );
+
+  // On Deck tasks
+  store.tasks.push(
+    { id: 'p30', title: 'Schedule dentist appointment', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: tomorrow, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p31', title: 'Order new office supplies', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '[ ] Printer paper\n[ ] Sticky notes\n[ ] Pens', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p32', title: 'Review insurance renewal', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p33', title: 'Follow up with vendor on pricing', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: 'weekly', recurDays: null, dueDate: tomorrow, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p34', title: 'Plan team offsite agenda', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: null, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] }
+  );
+
+  // Drawer tasks
+  store.tasks.push(
+    { id: 'p40', title: 'Research CRM options', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: null, projectId: null, notes: '', drawer: true, drawerCategory: 'work', isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p41', title: 'Book vacation flights', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: null, projectId: null, notes: '', drawer: true, drawerCategory: 'personal', isProject: false, trackTime: false, timeSessions: [] }
+  );
+
+  // Killed tasks
+  store.killedTasks.push(
+    { id: 'p50', title: 'Old task that got killed', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: yesterday, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [], killedAt: new Date().toISOString() }
+  );
+
+  // Drawer categories
+  store.drawerCategories = {
+    work: { label: 'Work', color: '#3498db' },
+    personal: { label: 'Personal', color: '#27ae60' }
+  };
+
+  // Completion log (for Hall of Fame)
+  completionLog.push(
+    { ts: new Date().toISOString(), id: null },
+    { ts: new Date().toISOString(), id: null }
+  );
+
+  store.nextId = 100;
+
+  // Boot the UI
+  setDate();
+  render();
+  renderHallOfFame();
+})();
+</script>
+
+</body>
+</html>

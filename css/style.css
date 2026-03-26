@@ -416,6 +416,106 @@
     height: 13px;
     flex-shrink: 0;
   }
+
+  /* Category accordion in add modal (drawer context) */
+  .add-modal-cat-accordion {
+    padding: 8px 20px 12px;
+    border-top: 1px solid var(--border-light);
+  }
+  .add-modal-cat-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .add-modal-cat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    font-size: 11px;
+    font-family: Inter, sans-serif;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .add-modal-cat-chip:hover {
+    border-color: var(--text-muted);
+  }
+  .add-modal-cat-chip.active {
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+    background: rgba(229,46,10,0.04);
+  }
+  .add-modal-cat-chip .cat-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .add-modal-cat-x {
+    font-size: 9px;
+    opacity: 0;
+    margin-left: 2px;
+    color: var(--text-muted);
+    transition: opacity 0.15s;
+  }
+  .add-modal-cat-chip:hover .add-modal-cat-x {
+    opacity: 0.6;
+  }
+  .add-modal-cat-x:hover {
+    opacity: 1 !important;
+    color: var(--accent-red);
+  }
+  .add-modal-cat-new {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-light);
+  }
+  .add-modal-cat-new input {
+    flex: 1;
+    min-width: 100px;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: Inter, sans-serif;
+    background: var(--bg-secondary);
+    color: var(--text);
+    outline: none;
+  }
+  .add-modal-cat-new input:focus {
+    border-color: var(--accent-red);
+  }
+  .add-modal-cat-colors {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .add-modal-cat-save {
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--accent-red);
+    background: none;
+    color: var(--accent-red);
+    font-size: 11px;
+    font-weight: 600;
+    font-family: Inter, sans-serif;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .add-modal-cat-save:hover {
+    background: var(--accent-red);
+    color: #fff;
+  }
+
   .add-modal-track-section {
     padding: 0 20px 8px;
   }
@@ -545,9 +645,31 @@
   }
   .today-item:last-child { border-bottom: none; }
   .today-item:hover { background: var(--vote-hover); }
-  /* Align project rows with today rows (compensate for missing drag handle) */
+  /* Project rows use same layout as today rows */
   .today-item.project-row {
-    padding-left: 32px;
+    padding-left: 16px;
+  }
+  .project-meta-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+    flex-shrink: 0;
+    min-width: 120px;
+    justify-content: flex-end;
+  }
+  .project-progress-bar {
+    width: 40px;
+    height: 4px;
+    background: var(--bg-secondary);
+    border-radius: 2px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .project-progress-fill {
+    height: 100%;
+    background: var(--accent-green);
+    border-radius: 2px;
   }
   .drag-handle {
     display: flex;
@@ -646,49 +768,25 @@
     font-size: 11px;
   }
 
-  /* Remove from today */
-  .push-btn {
-    opacity: 0;
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-size: 14px;
-    padding: 4px;
-    border-radius: 4px;
-    transition: all 0.15s;
-  }
-  .today-item:hover .push-btn { opacity: 0.6; }
-  .push-btn:hover { opacity: 1 !important; color: var(--accent-blue); }
+  /* Drawer pill in notes card — now visible on all breakpoints */
 
-  .push-popover {
-    position: absolute;
-    background: var(--bg-card, var(--bg));
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-    z-index: 9999;
-    display: flex;
-    gap: 4px;
-    white-space: nowrap;
-  }
-  .push-popover button {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 5px 12px;
+  /* Swipe-to-delete — hidden on desktop */
+  .swipe-delete-bg { display: none; }
+
+  /* Mobile inline drawer section — hidden on desktop */
+  .mobile-drawer-section { display: none; }
+  .mobile-drawer-count {
     font-size: 12px;
-    font-weight: 600;
+    color: var(--text-muted);
+    font-weight: 400;
     font-family: Inter, sans-serif;
-    cursor: pointer;
-    color: var(--text);
-    transition: all 0.15s;
   }
-  .push-popover button:hover {
-    background: var(--accent-blue);
-    color: #fff;
-    border-color: var(--accent-blue);
+  .mobile-drawer-group-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 8px 16px 4px;
+    font-family: Inter, sans-serif;
   }
 
   .remove-btn {
@@ -701,7 +799,8 @@
     padding: 4px;
     transition: opacity var(--transition), color var(--transition);
   }
-  .today-item:hover .remove-btn { opacity: 1; }
+  .today-item:hover .remove-btn,
+  .backlog-item:hover .remove-btn { opacity: 1; }
   .remove-btn:hover { color: var(--accent-red); }
 
   /* ─── BACKLOG ─── */
@@ -749,8 +848,8 @@
   }
 
   .backlog-task-title {
-    font-size: 14px;
-    font-weight: 400;
+    font-size: 15px;
+    font-weight: 500;
     flex: 1;
     color: var(--text);
   }
@@ -1548,28 +1647,36 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 6px 14px;
-    border-radius: 20px;
-    border: 1px solid var(--border);
-    background: var(--bg-secondary);
-    font-size: 12px;
+    padding: 2px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--accent-red);
+    background: none;
+    font-size: 11px;
     font-family: 'Inter', sans-serif;
-    font-weight: 500;
-    color: var(--text-muted);
+    font-weight: 600;
+    color: var(--accent-red);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
   }
   .archive-pill:hover {
+    background: var(--accent-red);
+    color: #fff;
+  }
+  .archive-pill.killed {
     border-color: var(--text-muted);
-    color: var(--text-secondary);
+    color: var(--text-muted);
+  }
+  .archive-pill.killed:hover {
+    background: var(--text-muted);
+    color: #fff;
   }
   .archive-pill-icon {
     font-size: 10px;
-    opacity: 0.7;
   }
   .archive-pill-count {
     font-size: 10px;
-    opacity: 0.6;
+    opacity: 0.8;
   }
 
   /* ─── ARCHIVE POPUP ─── */
@@ -3140,7 +3247,7 @@
       padding-bottom: 8px;
     }
     .section-title {
-      font-size: 18px;
+      font-size: 20px;
     }
 
     /* Daily counter */
@@ -3153,42 +3260,88 @@
     /* Today items */
     .today-item {
       padding: 10px 8px;
-      gap: 6px;
+      gap: 8px;
     }
     .today-number {
-      font-size: 15px;
-      min-width: 16px;
+      font-size: 17px;
+      min-width: 20px;
     }
     .drag-handle {
       width: 14px;
       font-size: 12px;
     }
     .checkbox {
-      width: 20px;
-      height: 20px;
+      width: 22px;
+      height: 22px;
+    }
+    /* Project rows match today rows on mobile */
+    .today-item.project-row {
+      padding-left: 8px;
     }
     .task-title {
-      font-size: 14px;
+      font-size: 16px;
     }
     .task-due {
       font-size: 11px;
       padding: 1px 6px;
     }
-    /* Show action buttons always on mobile (no hover) */
-    .push-btn { opacity: 0.4; }
-    .remove-btn { opacity: 0.4; }
-    .trash-btn { opacity: 0.4; }
-    .copy-btn { opacity: 0.4; }
+    /* Hide action buttons on mobile — clean main view */
+    .remove-btn { display: none; }
+    .drawer-move-btn { display: none; }
+    .notes-drawer-pill { display: inline-flex; }
+    .copy-btn { display: none; }
     .drawer-item-actions { opacity: 0.6; }
     .drawer-item:hover .drawer-item-actions { opacity: 1; }
+
+    /* Swipe-to-delete */
+    .swipe-row-wrap {
+      position: relative;
+      overflow: hidden;
+    }
+    .swipe-delete-bg {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 80px;
+      background: var(--accent-red);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: Inter, sans-serif;
+      letter-spacing: 0.3px;
+    }
+    .swipe-row-wrap > .today-item,
+    .swipe-row-wrap > .backlog-item {
+      position: relative;
+      z-index: 1;
+      background: var(--bg);
+      transition: transform 0.15s ease;
+    }
+    .swipe-row-wrap.swiping > .today-item,
+    .swipe-row-wrap.swiping > .backlog-item {
+      transition: none;
+    }
+    .swipe-row-wrap.deleting > .today-item,
+    .swipe-row-wrap.deleting > .backlog-item {
+      transition: transform 0.25s ease, opacity 0.25s ease;
+      transform: translateX(-100%) !important;
+      opacity: 0;
+    }
 
     /* On Deck items */
     .backlog-item {
       padding: 10px 8px;
       gap: 6px;
     }
+    .backlog-actions {
+      display: none;
+    }
     .backlog-task-title {
-      font-size: 13px;
+      font-size: 16px;
     }
     .vote-btn {
       width: 26px;
@@ -3197,15 +3350,6 @@
     .vote-btn svg {
       width: 12px;
       height: 12px;
-    }
-    /* Show actions always on mobile */
-    .backlog-actions {
-      opacity: 1;
-    }
-    .action-box {
-      width: 24px;
-      height: 24px;
-      font-size: 11px;
     }
 
     /* Prevent iOS auto-zoom on input focus (requires font-size >= 16px) */
@@ -3349,23 +3493,11 @@
       max-width: 300px;
     }
 
-    /* Push popover */
-    .push-popover {
-      left: 50% !important;
-      transform: translateX(-50%);
-    }
-
-    /* Drawer — full screen on mobile */
-    .drawer-tab {
-      padding: 10px 6px;
-      font-size: 11px;
-    }
-    .drawer-panel {
-      width: 100vw;
-      max-width: 100vw;
-      padding: 16px;
-      padding-top: 16px;
-    }
+    /* Drawer — hide slide-out on mobile, show inline section */
+    .drawer-tab { display: none !important; }
+    .drawer-panel { display: none !important; }
+    .drawer-overlay { display: none !important; }
+    .mobile-drawer-section { display: block; }
 
     /* Archive popup mobile */
     .archive-popup {

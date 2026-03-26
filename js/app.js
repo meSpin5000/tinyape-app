@@ -379,6 +379,79 @@ function render() {
   renderKilled();
   renderDrawer();
   updateCounts();
+  if (window.innerWidth <= 640) initSwipeToDelete();
+}
+
+// ─── SWIPE TO DELETE (mobile) ───
+function initSwipeToDelete() {
+  const rows = document.querySelectorAll('.today-item:not(.swipe-ready), .backlog-item:not(.swipe-ready)');
+  rows.forEach(row => {
+    // Skip rows inside hidden containers or archive popups
+    if (row.closest('#completedSection') || row.closest('#killedSection') || row.closest('.archive-popup')) return;
+
+    row.classList.add('swipe-ready');
+    const taskId = row.getAttribute('data-id');
+    if (!taskId) return;
+
+    // Determine if this is a drawer task
+    const isDrawerTask = !!row.closest('#mobileDrawerList');
+
+    // Wrap in swipe container
+    const wrap = document.createElement('div');
+    wrap.className = 'swipe-row-wrap';
+    wrap.innerHTML = '<div class="swipe-delete-bg">Delete</div>';
+    row.parentNode.insertBefore(wrap, row);
+    wrap.appendChild(row);
+
+    let startX = 0, currentX = 0, swiping = false;
+    const THRESHOLD = 70;
+
+    row.addEventListener('touchstart', (e) => {
+      // Don't interfere with checkbox taps, vote buttons, or drag handles
+      const tag = e.target.closest('.checkbox, .vote-btn, .drag-handle, button');
+      if (tag) return;
+      startX = e.touches[0].clientX;
+      currentX = startX;
+      swiping = false;
+    }, { passive: true });
+
+    row.addEventListener('touchmove', (e) => {
+      if (startX === 0) return;
+      currentX = e.touches[0].clientX;
+      const dx = currentX - startX;
+      // Only swipe left
+      if (dx < -10) {
+        swiping = true;
+        wrap.classList.add('swiping');
+        const clamped = Math.max(dx, -120);
+        row.style.transform = `translateX(${clamped}px)`;
+      }
+    }, { passive: true });
+
+    row.addEventListener('touchend', () => {
+      if (!swiping) { startX = 0; return; }
+      wrap.classList.remove('swiping');
+      const dx = currentX - startX;
+
+      if (dx < -THRESHOLD) {
+        // Delete
+        wrap.classList.add('deleting');
+        setTimeout(() => {
+          if (isDrawerTask) {
+            handleDrawerTrash(taskId);
+          } else {
+            handleDeleteTask(taskId);
+          }
+        }, 250);
+      } else {
+        // Snap back
+        row.style.transform = '';
+      }
+      startX = 0;
+      currentX = 0;
+      swiping = false;
+    }, { passive: true });
+  });
 }
 
 function renderToday() {
@@ -412,8 +485,7 @@ function todayItemHtml(t) {
         <div class="task-title task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</div>
       </div>
       ${dueHtml}
-      <button class="push-btn" onclick="openPushPopover(${qid(t.id)}, this)" title="Push out">⟩</button>
-      <button class="push-btn" onclick="handleMoveToDrawerFromToday(${qid(t.id)})" title="Move to Drawer">${drawerIconSvg}</button>
+      <button class="remove-btn drawer-move-btn" onclick="handleMoveToDrawerFromToday(${qid(t.id)})" title="Move to Drawer">${drawerIconSvg}</button>
       <button class="remove-btn" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
     </div>`;
 }
@@ -517,10 +589,9 @@ function renderProjectsList() {
     const prog = api.getChecklistProgress(t.id);
     const pct = prog.total > 0 ? Math.round((prog.checked / prog.total) * 100) : 0;
     const progressHtml = prog.total > 0
-      ? `<div style="flex:1;max-width:60px;height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden;">
-           <div style="height:100%;width:${pct}%;background:var(--accent-green);border-radius:2px;"></div>
-         </div>
-         <span style="font-size:10px;color:var(--text-muted);font-weight:600;">${prog.checked}/${prog.total}</span>`
+      ? `<div class="project-progress-bar">
+           <div class="project-progress-fill" style="width:${pct}%"></div>
+         </div>`
       : '';
 
     const totalMins = (t.timeSessions || []).reduce((sum, s) => sum + s.minutes, 0);
@@ -546,10 +617,11 @@ function renderProjectsList() {
             ${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${recurInline}
           </div>
         </div>
-        ${progressHtml}
-        ${timeHtml}
-        ${dateBtn}
-        <button class="push-btn" onclick="openPushPopover(${qid(t.id)}, this)" title="Push out">⟩</button>
+        <div class="project-meta-right">
+          ${progressHtml}
+          ${timeHtml}
+          ${dateBtn}
+        </div>
         <button class="remove-btn" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
       </div>`;
   }).join('');
@@ -579,9 +651,8 @@ function renderBacklog() {
         <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</span>
         ${dateBtn}
         <div class="backlog-actions">
-          <button class="action-box" onclick="openPushPopover(${qid(t.id)}, this)" title="Push out">⟩</button>
-          <button class="action-box" onclick="handleMoveToDrawer(${qid(t.id)})" title="Move to Drawer">${drawerIconSvg}</button>
-          <button class="action-box action-trash" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
+          <button class="remove-btn drawer-move-btn" onclick="handleMoveToDrawer(${qid(t.id)})" title="Move to Drawer">${drawerIconSvg}</button>
+          <button class="remove-btn" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
         </div>
       </div>`;
   }).join('');
@@ -872,16 +943,21 @@ function placeCursorAfterCheckbox(container) {
   }
 }
 
+// Track selected category for drawer add modal
+let addModalDrawerCategory = null;
+
 function openAddModal(context) {
   addModalContext = context || 'ondeck';
   addModalDestination = (context === 'today') ? 'today'
     : (context === 'project') ? 'ondeck'
+    : (context === 'drawer') ? 'drawer'
     : 'ondeck';
   store.addTaskAsProject = (context === 'project');
   addTaskListMode = (context === 'project');  // auto-list mode for projects
   store.selectedDueDate = null;
   store.selectedRecurring = null;
   store.selectedRecurDays = [];
+  addModalDrawerCategory = null;
 
   const modal = document.getElementById('addModal');
   const overlay = document.getElementById('addModalOverlay');
@@ -902,6 +978,13 @@ function openAddModal(context) {
     setModalNotesText('[ ] ');
   } else if (context === 'today') {
     titleEl.textContent = 'Add to Today';
+    subtitleEl.style.display = 'none';
+    input.placeholder = 'What needs to be done?';
+    setModalNotesPlaceholder('Add notes…');
+    notesWrap.classList.add('open');
+    clearModalNotes();
+  } else if (context === 'drawer') {
+    titleEl.textContent = 'Add to Drawer';
     subtitleEl.style.display = 'none';
     input.placeholder = 'What needs to be done?';
     setModalNotesPlaceholder('Add notes…');
@@ -946,6 +1029,12 @@ function _resetAddModal() {
   document.getElementById('addModalNotesWrap').classList.remove('open');
   store.addTaskAsProject = false;
   store.addTaskTrackTime = false;
+  // Clean up category accordion
+  addModalCatAccordionOpen = false;
+  addModalNewCatColor = null;
+  addModalDrawerCategory = null;
+  const catAcc = document.getElementById('addModalCatAccordion');
+  if (catAcc) catAcc.remove();
   const trackSection = document.getElementById('addModalTrackSection');
   if (trackSection) {
     trackSection.style.display = 'none';
@@ -979,9 +1068,133 @@ function renderAddModalPills() {
   html += `<button class="add-modal-pill ${store.addTaskTrackTime ? 'active' : ''}" onclick="toggleAddTrackTime()">${trackIconSvg} Track</button>`;
   html += `<button class="add-modal-pill ${store.addTaskAsProject ? 'active' : ''}" onclick="toggleAddAsProject()">${projectIconSvg} Project</button>`;
   html += `<button class="add-modal-pill ${addTaskListMode ? 'active' : ''}" onclick="toggleModalListMode()">${checkboxIconSvg} List</button>`;
-  if (!isTodayCtx) html += `<span class="add-modal-hint">if not specified, tasks default to one week out</span>`;
+
+  // Category picker — shown when adding to drawer
+  if (addModalContext === 'drawer') {
+    const cats = store.drawerCategories;
+    const catEntries = Object.entries(cats);
+    if (catEntries.length) {
+      const catLabel = addModalDrawerCategory && cats[addModalDrawerCategory]
+        ? cats[addModalDrawerCategory].label
+        : 'Category';
+      const catColor = addModalDrawerCategory && cats[addModalDrawerCategory]
+        ? cats[addModalDrawerCategory].color
+        : 'var(--text-muted)';
+      const dotHtml = `<span style="width:6px;height:6px;border-radius:50%;background:${catColor};display:inline-block;margin-right:2px;"></span>`;
+      html += `<button class="add-modal-pill ${addModalDrawerCategory ? 'active' : ''}" onclick="cycleAddModalCategory()">${dotHtml} ${catLabel}</button>`;
+    }
+  }
+
+  if (!isTodayCtx && addModalContext !== 'drawer') html += `<span class="add-modal-hint">if not specified, tasks default to one week out</span>`;
 
   el.innerHTML = html;
+}
+
+let addModalCatAccordionOpen = false;
+let addModalNewCatColor = null;
+
+function cycleAddModalCategory() {
+  addModalCatAccordionOpen = !addModalCatAccordionOpen;
+  renderAddModalCatAccordion();
+}
+
+function renderAddModalCatAccordion() {
+  let acc = document.getElementById('addModalCatAccordion');
+  if (!addModalCatAccordionOpen) {
+    if (acc) acc.remove();
+    return;
+  }
+
+  const cats = store.drawerCategories;
+  const catEntries = Object.entries(cats);
+
+  if (!acc) {
+    acc = document.createElement('div');
+    acc.id = 'addModalCatAccordion';
+    acc.className = 'add-modal-cat-accordion';
+    const pillsEl = document.getElementById('addModalPills');
+    pillsEl.insertAdjacentElement('afterend', acc);
+  }
+
+  // Existing categories — click to select, ✕ to delete
+  let html = '<div class="add-modal-cat-list">';
+  catEntries.forEach(([key, cat]) => {
+    const isActive = addModalDrawerCategory === key;
+    html += `<span class="add-modal-cat-chip ${isActive ? 'active' : ''}" onclick="selectAddModalCategory('${key}')">
+      <span class="cat-dot" style="background:${cat.color}"></span>${cat.label}<span class="add-modal-cat-x" onclick="event.stopPropagation(); deleteAddModalCategory('${key}')" title="Remove">✕</span>
+    </span>`;
+  });
+  // "Someday" option (no category)
+  const noActive = !addModalDrawerCategory;
+  html += `<span class="add-modal-cat-chip ${noActive ? 'active' : ''}" onclick="selectAddModalCategory(null)">
+    <span class="cat-dot" style="background:var(--text-muted)"></span>Someday
+  </span>`;
+  html += '</div>';
+
+  // Add new category form
+  html += `<div class="add-modal-cat-new">
+    <input type="text" id="addModalNewCatName" placeholder="New category…" />
+    <div class="add-modal-cat-colors">
+      ${catColorOptions.map(c =>
+        `<span class="drawer-cat-color-opt ${c === addModalNewCatColor ? 'selected' : ''}" style="background:${c};" onclick="event.stopPropagation(); pickAddModalCatColor('${c}')"></span>`
+      ).join('')}
+    </div>
+    <button class="add-modal-cat-save" onclick="saveAddModalNewCategory()">Add category</button>
+  </div>`;
+
+  acc.innerHTML = html;
+
+  // Default color for new category
+  if (!addModalNewCatColor) {
+    addModalNewCatColor = catColorOptions[catEntries.length % catColorOptions.length];
+    // Update the selected dot
+    const dot = acc.querySelector(`.drawer-cat-color-opt[style*="${addModalNewCatColor}"]`);
+    if (dot) dot.classList.add('selected');
+  }
+
+  // Enter key on name input
+  const nameInput = document.getElementById('addModalNewCatName');
+  if (nameInput) {
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') saveAddModalNewCategory();
+    });
+  }
+}
+
+function selectAddModalCategory(key) {
+  addModalDrawerCategory = key;
+  renderAddModalPills();
+  renderAddModalCatAccordion();
+}
+
+function deleteAddModalCategory(key) {
+  api.deleteDrawerCategory(key);
+  if (addModalDrawerCategory === key) addModalDrawerCategory = null;
+  renderAddModalPills();
+  renderAddModalCatAccordion();
+  renderDrawer(); // update desktop drawer too
+}
+
+function pickAddModalCatColor(color) {
+  addModalNewCatColor = color;
+  document.querySelectorAll('#addModalCatAccordion .drawer-cat-color-opt').forEach(el => el.classList.remove('selected'));
+  const match = document.querySelector(`#addModalCatAccordion .drawer-cat-color-opt[style*="${color}"]`);
+  if (match) match.classList.add('selected');
+}
+
+function saveAddModalNewCategory() {
+  const input = document.getElementById('addModalNewCatName');
+  if (!input) return;
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+  const key = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  const color = addModalNewCatColor || catColorOptions[0];
+  api.addDrawerCategory(key, name, color);
+  addModalDrawerCategory = key; // auto-select the new category
+  addModalNewCatColor = null;
+  renderAddModalPills();
+  renderAddModalCatAccordion();
+  renderDrawer();
 }
 
 function renderAddModalActions() {
@@ -1103,6 +1316,11 @@ function addModalSubmit(destination) {
 
   task.notes = notes;
 
+  // Assign drawer category if set
+  if (isDrawer && addModalDrawerCategory) {
+    task.drawerCategory = addModalDrawerCategory;
+  }
+
   // Mark as project if toggled
   if (store.addTaskAsProject) {
     task.isProject = true;
@@ -1135,7 +1353,7 @@ function addModalSubmit(destination) {
 
   const label = task.isProject ? 'Project' : 'Task';
   if (destination === 'today') showToast(`${label} added to Today`);
-  else if (isDrawer) { showToast(`${label} added to Drawer`); if (!store.drawerOpen) toggleDrawer(); }
+  else if (isDrawer) { showToast(`${label} added to Drawer`); if (!store.drawerOpen && window.innerWidth > 640) toggleDrawer(); }
   else showToast(`${label} added to On Deck`);
 }
 
@@ -1248,47 +1466,6 @@ function addTaskToToday() {
 }
 
 // ─── PUSH POPOVER ───
-let pushPopoverEl = null;
-
-function openPushPopover(taskId, btn) {
-  closePushPopover();
-  const rect = btn.getBoundingClientRect();
-  const pop = document.createElement('div');
-  pop.className = 'push-popover';
-  pop.innerHTML = `
-    <button onclick="pushTask(${taskId}, 1)">+1d</button>
-    <button onclick="pushTask(${taskId}, 7)">+1w</button>
-    <button onclick="closePushPopover(); openSchedulePopover(${taskId}, this)">⚙</button>
-  `;
-  pop.style.position = 'fixed';
-  pop.style.left = (rect.left - 80) + 'px';
-  pop.style.top = (rect.bottom + 4) + 'px';
-  document.body.appendChild(pop);
-  pushPopoverEl = pop;
-  setTimeout(() => document.addEventListener('click', closePushPopoverOnOutside), 0);
-}
-
-function closePushPopover() {
-  if (pushPopoverEl) { pushPopoverEl.remove(); pushPopoverEl = null; }
-  document.removeEventListener('click', closePushPopoverOnOutside);
-}
-
-function closePushPopoverOnOutside(e) {
-  if (pushPopoverEl && !pushPopoverEl.contains(e.target)) closePushPopover();
-}
-
-function pushTask(taskId, days) {
-  const task = store.tasks.find(t => t.id === taskId);
-  if (!task) return;
-  const base = new Date();
-  base.setHours(0, 0, 0, 0);
-  base.setDate(base.getDate() + days);
-  task.dueDate = base.toISOString().split('T')[0];
-  closePushPopover();
-  render();
-  showToast(`Pushed to ${fmtDate(base)}`);
-}
-
 // ─── JUNK DRAWER ───
 function toggleDrawer() {
   store.drawerOpen = !store.drawerOpen;
@@ -1695,6 +1872,81 @@ function renderDrawer() {
   }
 
   el.innerHTML = html;
+
+  // Also render mobile inline drawer
+  renderMobileDrawer();
+}
+
+function renderMobileDrawer() {
+  const listEl = document.getElementById('mobileDrawerList');
+  const countEl = document.getElementById('mobileDrawerCount');
+  if (!listEl) return;
+
+  const allDrawer = api.getDrawerTasks();
+  const cats = store.drawerCategories;
+
+  // Update count
+  if (countEl) countEl.textContent = allDrawer.length ? `(${allDrawer.length})` : '';
+
+  if (allDrawer.length === 0) {
+    listEl.innerHTML = '<div class="section-empty-hint">Drawer is empty — toss tasks here for later</div>';
+    return;
+  }
+
+  // Group by category
+  const groups = {};
+  Object.keys(cats).forEach(key => { groups[key] = []; });
+  groups.someday = [];
+  allDrawer.forEach(t => {
+    const catKey = t.drawerCategory && cats[t.drawerCategory] ? t.drawerCategory : 'someday';
+    if (!groups[catKey]) groups[catKey] = [];
+    groups[catKey].push(t);
+  });
+  Object.values(groups).forEach(arr => {
+    arr.sort((a, b) => {
+      if (a.dueDate && !b.dueDate) return -1;
+      if (!a.dueDate && b.dueDate) return 1;
+      if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+      return 0;
+    });
+  });
+
+  let html = '';
+  const catKeys = Object.keys(cats);
+  const allGroupKeys = [...catKeys, 'someday'];
+
+  allGroupKeys.forEach(key => {
+    const tasks = groups[key] || [];
+    if (!tasks.length) return;
+
+    const label = key === 'someday' ? 'SOMEDAY' : cats[key].label.toUpperCase();
+    const color = key === 'someday' ? 'var(--text-muted)' : cats[key].color;
+
+    html += `<div class="mobile-drawer-group">
+      <div class="mobile-drawer-group-label" style="color:${color}">${label}</div>`;
+
+    tasks.forEach(t => {
+      const due = t.dueDate ? formatDueDate(t.dueDate) : null;
+      const dateMeta = due ? `<span class="task-due ${due.cls}">${due.text}</span>` : '';
+      const notesIcon = t.notes ? '<span class="notes-indicator">📄</span>' : '';
+      const recurIcon = t.recurring ? '<span class="recur-inline-icon">↻</span>' : '';
+
+      html += `<div class="backlog-item" data-id="${t.id}">
+        <button class="vote-btn" onclick="handleDrawerMoveToOnDeck(${qid(t.id)})" title="Move to On Deck">
+          ${plusSvg}
+        </button>
+        <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${notesIcon}${recurIcon}</span>
+        ${dateMeta}
+        <div class="backlog-actions">
+          <button class="remove-btn" onclick="handleDrawerTrash(${qid(t.id)})" title="Delete">✕</button>
+        </div>
+      </div>`;
+    });
+
+    html += `</div>`;
+  });
+
+  listEl.innerHTML = html;
 }
 
 // Close drawer on Escape
@@ -2305,12 +2557,6 @@ function openNotesSidebar(id, anchorEl) {
   const dayLabels = task.recurDays ? task.recurDays.map(d => dayShort[d]).join(', ') : '';
 
   let pillsHtml = '';
-  // Today pill
-  if (task.today) {
-    pillsHtml += `<span class="notes-card-pill active" title="In Today list">${sunIconSvg} Today</span>`;
-  } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardVoteUp(${qid(id)})" title="Add to Today">${sunIconSvg} Today</span>`;
-  }
   // Unified schedule pill
   const hasSchedule = due || recurLabel;
   if (hasSchedule) {
@@ -2332,6 +2578,11 @@ function openNotesSidebar(id, anchorEl) {
   // Track pill — available on any task
   const hasTime = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
   pillsHtml += `<span class="notes-card-pill${hasTime ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
+
+  // Drawer pill — shown for non-drawer tasks (move TO drawer)
+  if (!task.drawer) {
+    pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} Drawer</span>`;
+  }
 
   // Build progress bar (only for projects with checklist items)
   const progressHtml = renderProgressBarHtml(task);
@@ -2500,11 +2751,6 @@ function refreshSidebarMeta() {
   const dayLabels = task.recurDays ? task.recurDays.map(d => dayShort[d]).join(', ') : '';
 
   let pillsHtml = '';
-  if (task.today) {
-    pillsHtml += `<span class="notes-card-pill active" title="In Today list">${sunIconSvg} Today</span>`;
-  } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardVoteUp(${qid(id)})" title="Add to Today">${sunIconSvg} Today</span>`;
-  }
   // Unified schedule pill
   const hasSchedule = due || recurLabel;
   if (hasSchedule) {
@@ -2526,6 +2772,11 @@ function refreshSidebarMeta() {
   // Track pill
   const hasTime2 = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
   pillsHtml += `<span class="notes-card-pill${hasTime2 ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
+
+  // Drawer pill — shown for non-drawer tasks
+  if (!task.drawer) {
+    pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} Drawer</span>`;
+  }
 
   const pillsContainer = notesCardEl.querySelector('.notes-card-pills');
   if (pillsContainer) pillsContainer.innerHTML = pillsHtml;
@@ -2704,6 +2955,16 @@ function cardVoteUp(id) {
   render();
   refreshSidebarMeta();
   showToast('Added to Today');
+}
+
+function cardMoveToDrawer(id) {
+  closeNotesCard();
+  const task = store.tasks.find(t => t.id === id);
+  if (task && task.today) {
+    handleMoveToDrawerFromToday(id);
+  } else {
+    handleMoveToDrawer(id);
+  }
 }
 
 // ─── CHECKLIST / NOTES (inline contenteditable with checkboxes) ───

@@ -348,7 +348,7 @@ window.TinyApeDB = {
   },
 
   /**
-   * Delete the most recent completion event for today (for uncomplete)
+   * Delete the most recent completion event (for uncomplete)
    * @returns {Promise<boolean>} True if deleted
    */
   async deleteLatestCompletionEvent() {
@@ -357,15 +357,12 @@ window.TinyApeDB = {
       const userId = await this._getUserId();
       if (!userId) return false;
 
-      // Find the most recent completion event for today
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-
+      // Find the single most recent completion event (no date filter —
+      // the user may uncomplete a task from any time period)
       const { data, error: fetchErr } = await window.supabase
         .from('completion_events')
         .select('id')
         .eq('user_id', userId)
-        .gte('created_at', todayStart.toISOString())
         .order('created_at', { ascending: false })
         .limit(1);
 
@@ -377,7 +374,11 @@ window.TinyApeDB = {
         .eq('id', data[0].id)
         .eq('user_id', userId);
 
-      return !delErr;
+      if (delErr) {
+        console.error('Error deleting completion event row:', delErr);
+        return false;
+      }
+      return true;
     } catch (err) {
       console.error('Error deleting completion event:', err);
       return false;
