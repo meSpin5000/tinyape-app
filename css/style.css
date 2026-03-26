@@ -3380,6 +3380,9 @@
       max-height: 85vh;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
+      background: var(--bg-secondary);
+      box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
+      border-top: 1px solid var(--border);
     }
     .add-modal.open {
       transform: none !important;
@@ -3397,9 +3400,9 @@
       gap: 6px;
     }
     .add-modal-pill {
-      font-size: 11px;
-      height: 26px;
-      padding: 0 8px;
+      font-size: 12px;
+      height: 30px;
+      padding: 0 10px;
     }
     .add-modal-actions {
       padding: 10px 16px 14px;
@@ -3452,6 +3455,9 @@
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
       animation: noteCardSlideUp 0.2s ease-out;
+      background: var(--bg-secondary);
+      box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
+      border-top: 1px solid var(--border);
     }
     @keyframes noteCardSlideUp {
       from { transform: translateY(100%); }
@@ -3465,22 +3471,23 @@
       width: 100%;
     }
     .notes-card-pills {
-      gap: 3px;
+      gap: 6px;
+      padding: 16px 20px;
     }
     .notes-card-pill {
-      padding: 3px 6px;
-      font-size: 9px;
-      height: 22px;
+      padding: 6px 10px;
+      font-size: 12px;
+      height: 30px;
     }
     .notes-card-pill svg {
-      width: 10px;
-      height: 10px;
+      width: 13px;
+      height: 13px;
     }
 
     /* Add modal pill SVGs on mobile */
     .add-modal-pill svg {
-      width: 11px;
-      height: 11px;
+      width: 13px;
+      height: 13px;
     }
 
     /* Track accordion in add modal — mobile */
@@ -3530,6 +3537,10 @@
       max-height: 85vh;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
+      background: var(--bg-secondary);
+      box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
+      border-top: 1px solid var(--border);
+      padding: 18px 16px;
     }
 
     /* Drawer — hide slide-out on mobile, show inline section */
