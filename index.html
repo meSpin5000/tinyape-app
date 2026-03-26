@@ -646,7 +646,12 @@ function startRealtimeSync() {
   }, (payload) => {
     const row = payload.new;
     console.log('[Realtime] Creature unlock INSERT:', row.creature_index);
-    // Only restore if it's from today and restoreCreaturesFromUnlocks exists
+    // Skip if this creature is already displayed (same-device echo)
+    if (typeof headerCreatures !== 'undefined' &&
+        headerCreatures.some(c => c.defIndex === row.creature_index)) {
+      console.log('[Realtime] Creature already displayed, skipping');
+      return;
+    }
     if (typeof restoreCreaturesFromUnlocks === 'function') {
       restoreCreaturesFromUnlocks([{
         creatureIndex: row.creature_index,
