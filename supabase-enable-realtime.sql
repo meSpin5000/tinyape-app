@@ -8,6 +8,7 @@
 alter publication supabase_realtime add table public.tasks;
 alter publication supabase_realtime add table public.completion_events;
 alter publication supabase_realtime add table public.drawer_categories;
+alter publication supabase_realtime add table public.creature_unlocks;
 
 -- Add missing DELETE policy on completion_events
 -- (needed for the "uncomplete" feature — deleting completion events)

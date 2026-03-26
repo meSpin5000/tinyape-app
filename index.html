@@ -104,6 +104,9 @@
     transition: opacity 0.2s;
   }
   .login-signout:hover { opacity: 1; }
+  /* Hide sign out when mobile popups are open */
+  body.notes-open .login-signout,
+  body.modal-open .login-signout { display: none; }
   .app-loading {
     display: flex;
     align-items: center;
