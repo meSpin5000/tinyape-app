@@ -395,17 +395,14 @@ async function loadAndShowApp() {
     setTimeout(() => showToast('Welcome to TinyApe! Add your first task to get started.'), 500);
   }
 
-  // Start periodic background sync (every 30s)
+  // Start realtime push-based sync + fallback poll
+  startRealtimeSync();
   startPeriodicSync();
 }
 
-// ─── REFRESH DATA FROM SUPABASE ───
-// Called on initial load, tab focus, and every 30 seconds.
-// 1. Flushes any pending writes (failed saves) to Supabase first
-// 2. Pulls latest state from Supabase
-// 3. Preserves any local-only tasks that haven't been saved yet
-// Fingerprint the store state for change detection.
-// Returns a string that changes when any task/killed/completion data changes.
+// ─── FULL REFRESH FROM SUPABASE ───
+// Used for initial load and infrequent fallback sync.
+// Returns true if data changed (callers should re-render).
 function _storeFingerprint() {
   const taskPart = store.tasks.map(t =>
     `${t.id}|${t.title}|${t.today}|${t.todayOrder}|${t.done}|${t.dueDate}|${t.drawer}|${t.notes}|${t.isProject}|${t.trackTime}|${t.killed}`
@@ -415,153 +412,285 @@ function _storeFingerprint() {
   return `${taskPart}##${killedPart}##${logPart}`;
 }
 
-// Returns true if data changed (callers should re-render), false if skipped or unchanged
 async function refreshFromSupabase(force) {
   try {
-    // Don't pull from DB if we have in-flight saves or recent mutations
-    // (prevents overwriting local state with stale DB data)
-    // Even forced refreshes (tab focus) respect in-flight saves to avoid clobbering
     if (window._isSafeToSync && !window._isSafeToSync()) {
-      console.log('[Sync] Skipping refresh — local mutations in progress');
+      console.log('[Sync] Skipping refresh — local writes in progress');
       return false;
     }
 
-    // Step 1: Flush any pending writes before pulling fresh data
     if (window._flushSyncQueue) {
       await window._flushSyncQueue();
     }
 
-    // Snapshot current state BEFORE network call for change detection
-    const beforeFingerprint = _storeFingerprint();
-
-    // Step 2: Pull fresh data from Supabase
+    const beforeFP = _storeFingerprint();
     const data = await TinyApeDB.loadAllData();
 
-    // Step 3: Re-check safety AFTER the network call completes.
-    // A mutation could have happened while we were waiting for the response.
+    // Re-check after network call — a mutation may have happened during fetch
     if (window._isSafeToSync && !window._isSafeToSync()) {
-      console.log('[Sync] Discarding refresh — local mutation happened during fetch');
+      console.log('[Sync] Discarding refresh — local mutation during fetch');
       return false;
     }
 
     if (data) {
-      // Step 4: Capture local-only tasks RIGHT BEFORE replacing the store
-      // (must be after the network call, not before, to catch tasks created during fetch)
       const localOnlyTasks = store.tasks.filter(t => typeof t.id === 'number');
 
-      // Replace store with DB data
       store.tasks = data.tasks || [];
       store.killedTasks = data.killedTasks || [];
 
-      // Step 5: Re-add any local-only tasks that didn't make it to DB yet
+      // Re-add local-only tasks not yet in DB
       if (localOnlyTasks.length > 0) {
         localOnlyTasks.forEach(localTask => {
           const alreadyInDb = store.tasks.some(t =>
             t._localId === localTask.id ||
             (t.title === localTask.title && t.today === localTask.today && t.done === localTask.done)
           );
-          if (!alreadyInDb) {
-            store.tasks.push(localTask);
-          }
+          if (!alreadyInDb) store.tasks.push(localTask);
         });
       }
 
-      // Convert drawerCategories array to object
-      if (data.drawerCategories && Array.isArray(data.drawerCategories)) {
-        store.drawerCategories = {};
-        data.drawerCategories.forEach(cat => {
-          store.drawerCategories[cat.key] = { label: cat.label, color: cat.color };
-        });
+      // Drawer categories
+      if (data.drawerCategories && typeof data.drawerCategories === 'object') {
+        if (Array.isArray(data.drawerCategories)) {
+          store.drawerCategories = {};
+          data.drawerCategories.forEach(cat => {
+            store.drawerCategories[cat.key || cat.id] = { label: cat.label, color: cat.color };
+          });
+        } else {
+          store.drawerCategories = data.drawerCategories;
+        }
       }
 
-      // Load completion log
+      // Completion log (preserve IDs for realtime DELETE matching)
       if (data.completionLog) {
         completionLog.length = 0;
         data.completionLog.forEach(e => {
           const ts = e.ts || e.createdAt || e.created_at;
-          if (ts) completionLog.push({ ts });
+          if (ts) completionLog.push({ ts, id: e.id || null });
         });
       }
 
-      // Set nextId higher than any existing task id
       const maxId = store.tasks.reduce((max, t) => {
         const n = typeof t.id === 'number' ? t.id : 0;
         return n > max ? n : max;
       }, 0);
       store.nextId = Math.max(store.nextId || 0, maxId + 1);
 
-      // Surface drawer tasks that are now within 14 days
       api.surfaceDrawerTasks();
 
-      // Step 6: Check if data actually changed — skip re-render if not
-      const afterFingerprint = _storeFingerprint();
-      if (afterFingerprint === beforeFingerprint) {
+      const afterFP = _storeFingerprint();
+      if (afterFP === beforeFP) {
         console.log('[Sync] Data unchanged — skipping re-render');
         return false;
       }
-      return true;  // data changed, caller should re-render
+      return true;
     }
     return false;
   } catch (err) {
-    console.error('Error loading data:', err);
+    console.error('[Sync] Error loading data:', err);
     return false;
   }
 }
 
-// ─── CROSS-DEVICE SYNC ───
-// When the user switches back to this tab, re-fetch everything from Supabase
+// ═══════════════════════════════════════════════
+// SUPABASE REALTIME — push-based sync
+// ═══════════════════════════════════════════════
+// Instead of polling every 30s and replacing the entire store,
+// we subscribe to row-level changes via Supabase Realtime.
+// Only changes from OTHER sessions trigger re-renders.
+// Our own writes are suppressed via echo detection in sync.js.
+
+let _realtimeChannel = null;
+let _realtimeConnected = false;
+
+function startRealtimeSync() {
+  if (!window.supabase || _realtimeChannel) return;
+
+  const channel = window.supabase.channel('tinyape-sync', {
+    config: { broadcast: { self: false } }
+  });
+
+  // ─── TASKS ───
+  channel.on('postgres_changes', {
+    event: 'INSERT', schema: 'public', table: 'tasks'
+  }, (payload) => {
+    const row = payload.new;
+    if (window._isEcho && window._isEcho(row.id)) return;
+    console.log('[Realtime] Task INSERT:', row.title);
+    const jsTask = TinyApeDB._mapDbTaskToJs(row);
+    if (row.killed) {
+      if (!store.killedTasks.some(t => t.id === row.id)) {
+        store.killedTasks.push(jsTask);
+      }
+    } else {
+      if (!store.tasks.some(t => t.id === row.id)) {
+        store.tasks.push(jsTask);
+      }
+    }
+    render();
+  });
+
+  channel.on('postgres_changes', {
+    event: 'UPDATE', schema: 'public', table: 'tasks'
+  }, (payload) => {
+    const row = payload.new;
+    if (window._isEcho && window._isEcho(row.id)) return;
+    // Don't overwrite a task the user is actively editing
+    if (typeof currentNotesTaskId !== 'undefined' && row.id === currentNotesTaskId) return;
+    console.log('[Realtime] Task UPDATE:', row.title);
+    const jsTask = TinyApeDB._mapDbTaskToJs(row);
+    const idx = store.tasks.findIndex(t => t.id === row.id);
+    const kIdx = store.killedTasks.findIndex(t => t.id === row.id);
+
+    if (row.killed) {
+      // Task was killed — move from active to killed
+      if (idx !== -1) store.tasks.splice(idx, 1);
+      if (kIdx !== -1) { store.killedTasks[kIdx] = jsTask; }
+      else { store.killedTasks.push(jsTask); }
+    } else {
+      // Task is active — move from killed to active if needed
+      if (kIdx !== -1) store.killedTasks.splice(kIdx, 1);
+      if (idx !== -1) { store.tasks[idx] = jsTask; }
+      else { store.tasks.push(jsTask); }
+    }
+    render();
+    renderHallOfFame();
+  });
+
+  channel.on('postgres_changes', {
+    event: 'DELETE', schema: 'public', table: 'tasks'
+  }, (payload) => {
+    const id = payload.old.id;
+    if (window._isEcho && window._isEcho(id)) return;
+    console.log('[Realtime] Task DELETE:', id);
+    store.tasks = store.tasks.filter(t => t.id !== id);
+    store.killedTasks = store.killedTasks.filter(t => t.id !== id);
+    render();
+  });
+
+  // ─── COMPLETION EVENTS ───
+  channel.on('postgres_changes', {
+    event: 'INSERT', schema: 'public', table: 'completion_events'
+  }, (payload) => {
+    if (window._isCompletionEcho && window._isCompletionEcho()) return;
+    const row = payload.new;
+    console.log('[Realtime] Completion INSERT');
+    completionLog.push({ ts: row.created_at, id: row.id });
+    renderHallOfFame();
+  });
+
+  channel.on('postgres_changes', {
+    event: 'DELETE', schema: 'public', table: 'completion_events'
+  }, (payload) => {
+    if (window._isCompletionEcho && window._isCompletionEcho()) return;
+    const id = payload.old.id;
+    console.log('[Realtime] Completion DELETE:', id);
+    const idx = completionLog.findIndex(e => e.id === id);
+    if (idx !== -1) {
+      completionLog.splice(idx, 1);
+    } else if (completionLog.length > 0) {
+      completionLog.pop();  // fallback: remove most recent
+    }
+    renderHallOfFame();
+  });
+
+  // ─── DRAWER CATEGORIES ───
+  channel.on('postgres_changes', {
+    event: '*', schema: 'public', table: 'drawer_categories'
+  }, (payload) => {
+    if (window._isCategoryEcho && window._isCategoryEcho()) return;
+    console.log('[Realtime] Category change:', payload.eventType);
+    if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+      const row = payload.new;
+      store.drawerCategories[row.key || row.id] = { label: row.label, color: row.color };
+    } else if (payload.eventType === 'DELETE') {
+      const id = payload.old.id;
+      delete store.drawerCategories[id];
+    }
+    renderDrawer();
+  });
+
+  // ─── SUBSCRIBE ───
+  channel.subscribe((status) => {
+    if (status === 'SUBSCRIBED') {
+      _realtimeConnected = true;
+      console.log('✓ Realtime sync connected');
+    } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+      _realtimeConnected = false;
+      console.warn('[Realtime] Disconnected — falling back to poll');
+    }
+  });
+
+  _realtimeChannel = channel;
+}
+
+function stopRealtimeSync() {
+  if (_realtimeChannel) {
+    window.supabase.removeChannel(_realtimeChannel);
+    _realtimeChannel = null;
+    _realtimeConnected = false;
+    console.log('[Realtime] Channel removed');
+  }
+}
+
+// ─── CROSS-DEVICE SYNC (visibility change) ───
 document.addEventListener('visibilitychange', async () => {
   if (document.getElementById('appPage').style.display === 'none') return;
 
   if (document.visibilityState === 'hidden') {
-    // Mobile safety: save any open notes/title before tab gets killed
+    // Mobile safety: flush notes + pending writes before tab kill
     if (typeof saveCurrentNotes === 'function') saveCurrentNotes();
-    // Flush pending writes so data isn't lost if the tab is killed
     if (window._flushSyncQueue) {
       try { await window._flushSyncQueue(); } catch(e) { /* best-effort */ }
     }
   }
 
   if (document.visibilityState === 'visible') {
-    const changed = await refreshFromSupabase(true);
-    setDate();
-    if (changed) {
-      render();
-      renderHallOfFame();
+    // If realtime was disconnected while hidden, do a full refresh
+    if (!_realtimeConnected) {
+      const changed = await refreshFromSupabase(true);
+      setDate();
+      if (changed) { render(); renderHallOfFame(); }
+      // Try to reconnect realtime
+      stopRealtimeSync();
+      startRealtimeSync();
+    } else {
+      setDate();
     }
   }
 });
 
 // ─── BEFORE UNLOAD SAFETY NET ───
-// Last-chance save when user closes tab or navigates away
 window.addEventListener('beforeunload', () => {
   if (typeof saveCurrentNotes === 'function') saveCurrentNotes();
-  // Use sendBeacon-style sync if possible (non-blocking)
-  // For now, best-effort flush — browser may kill this quickly
   if (window._flushSyncQueue) {
     window._flushSyncQueue().catch(() => {});
   }
 });
 
-// ─── PERIODIC BACKGROUND SYNC ───
-// Every 30 seconds: flush pending writes + pull latest from Supabase
-// This catches changes from other devices even if you don't switch tabs
+// ─── FALLBACK POLL (every 5 minutes) ───
+// Safety net: catches anything realtime might have missed.
+// With fingerprint check, this won't cause flicker if nothing changed.
 let _syncInterval = null;
 function startPeriodicSync() {
   if (_syncInterval) return;
   _syncInterval = setInterval(async () => {
-    // Only sync if app is visible and user is logged in
     if (document.visibilityState !== 'visible') return;
     if (document.getElementById('appPage').style.display === 'none') return;
 
+    // Flush any failed writes first
+    if (window._flushSyncQueue) {
+      try { await window._flushSyncQueue(); } catch(e) {}
+    }
+
+    // Only do a full refresh if realtime is disconnected or as a safety net
     const changed = await refreshFromSupabase();
-    setDate();
-    // Only re-render if data actually changed — prevents DOM flicker
     if (changed) {
+      setDate();
       render();
       renderHallOfFame();
     }
-  }, 30000);  // 30 seconds
+  }, 300000);  // 5 minutes (was 30 seconds)
 }
 
 boot();

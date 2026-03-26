@@ -801,9 +801,12 @@ function handleUncomplete(id) {
   if (completionLog.length > 0) {
     completionLog.pop();
   }
-  // Remove from DB — tracked through sync guard so refreshFromSupabase
-  // won't pull the not-yet-deleted event back and bounce the counter
+  // Remove from DB — tracked through sync guard so fallback poll
+  // won't pull the not-yet-deleted event back and bounce the counter.
+  // Also suppress the realtime echo for this delete.
   if (window.TinyApeDB && window.TinyApeDB.deleteLatestCompletionEvent) {
+    // Mark as our own write so realtime ignores the DELETE event
+    if (window._markCompletionWrite) window._markCompletionWrite();
     if (window._trackAsyncOp) {
       window._trackAsyncOp(() =>
         window.TinyApeDB.deleteLatestCompletionEvent()

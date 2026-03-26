@@ -1,52 +1,65 @@
-// TinyApe Sync Layer
-// Wraps in-memory API mutations with Supabase persistence
-// Operates "local-first" — the in-memory store is always fast,
-// and DB writes happen async in the background.
+// TinyApe Sync Layer (v2 — Realtime-first)
+// ──────────────────────────────────────────
+// Local-first: in-memory store is always fast, DB writes are async.
+// Supabase Realtime pushes row-level changes from other devices.
+// Echo suppression prevents our own writes from triggering re-renders.
 // Failed writes are queued and retried automatically.
 
 (function() {
   'use strict';
 
   // ─── RETRY QUEUE ───
-  // Tasks that failed to save to Supabase get queued here for retry
   const pendingWrites = [];  // [{ task: {...}, retries: 0 }]
   const MAX_RETRIES = 10;
-  let _inFlightSaves = 0;     // count of currently executing DB saves
-  let _lastMutationTime = 0;  // timestamp of last local mutation
+  let _inFlightSaves = 0;
 
-  window._syncQueue = pendingWrites;  // expose for debugging
+  // ─── ECHO SUPPRESSION ───
+  // When we write to DB, the realtime subscription will echo that change back.
+  // We track recent writes so the realtime handler can skip our own changes.
+  const _recentWrites = new Map();    // id (string) -> timestamp
+  let _lastCompletionWrite = 0;       // timestamp of last completion event write/delete
+  let _lastCategoryWrite = 0;         // timestamp of last category write/delete
+
+  function _markWritten(id) {
+    if (id == null) return;
+    _recentWrites.set(String(id), Date.now());
+    // Prune entries older than 15 seconds
+    if (_recentWrites.size > 50) {
+      for (const [key, ts] of _recentWrites) {
+        if (Date.now() - ts > 15000) _recentWrites.delete(key);
+      }
+    }
+  }
+
+  // ─── EXPOSED HELPERS ───
+
+  window._syncQueue = pendingWrites;  // for debugging
 
   // Resolve a task ID that might be stale (integer ID replaced by UUID).
-  // Onclick handlers capture the ID at render time; if the ID was updated
-  // from an integer to a UUID between render and click, this resolves it.
   window._findTaskById = function(id) {
     return store.tasks.find(t => t.id === id || t._localId === id);
   };
 
-  // Check if there are unsaved local changes or in-flight saves
   window._hasPendingWrites = function() {
     return pendingWrites.length > 0 || _inFlightSaves > 0;
   };
 
-  // Check if it's safe to pull from DB (no recent mutations or in-flight saves)
+  // Check if it's safe to do a FULL refresh from DB
+  // (used by the infrequent fallback poll and tab-focus refresh)
   window._isSafeToSync = function() {
     if (_inFlightSaves > 0) return false;
     if (pendingWrites.length > 0) return false;
-    // Check for any pending save timers on tasks
     if (store.tasks.some(t => t._pendingSaveTimer)) return false;
-    // Don't sync within 10 seconds of last mutation
-    if (Date.now() - _lastMutationTime < 10000) return false;
     return true;
   };
 
-  // Flush all pending writes to Supabase (called before refresh)
+  // Flush all pending writes to Supabase (called before full refresh)
   window._flushSyncQueue = async function() {
     if (pendingWrites.length === 0) return;
 
     const DB = window.TinyApeDB;
     if (!DB) return;
 
-    // Work through a copy so we can safely modify the queue
     const batch = pendingWrites.splice(0, pendingWrites.length);
     const stillFailing = [];
 
@@ -54,11 +67,11 @@
       try {
         const saved = await DB.saveTask(entry.task);
         if (saved && saved.id !== entry.task.id) {
-          // Update local ID with the DB UUID
           const localTask = store.tasks.find(t => t.id === entry.task.id);
           if (localTask) localTask.id = saved.id;
           entry.task.id = saved.id;
         }
+        _markWritten(saved ? saved.id : entry.task.id);
       } catch (err) {
         console.error('Retry failed for task:', entry.task.title, err);
         entry.retries++;
@@ -70,43 +83,52 @@
       }
     }
 
-    // Put failures back in the queue
     stillFailing.forEach(e => pendingWrites.push(e));
   };
 
-  // Get IDs of tasks that only exist locally (never saved to DB)
-  // These have local integer IDs rather than DB UUIDs
-  // Track an arbitrary async operation through the sync guard system.
-  // Bumps _lastMutationTime and _inFlightSaves so _isSafeToSync() returns
-  // false until the operation completes — prevents refreshFromSupabase from
-  // overwriting local state while a DB mutation (e.g. delete) is in flight.
+  // Track an arbitrary async op through in-flight counter
   window._trackAsyncOp = function(promiseFn) {
-    _lastMutationTime = Date.now();
     _inFlightSaves++;
     return promiseFn().then(result => {
       _inFlightSaves--;
-      _lastMutationTime = Date.now();
       return result;
     }).catch(err => {
       _inFlightSaves--;
-      _lastMutationTime = Date.now();
       throw err;
     });
   };
 
+  // Echo suppression: check if a realtime event is our own write
+  window._isEcho = function(id) {
+    if (id == null) return false;
+    const ts = _recentWrites.get(String(id));
+    return ts != null && (Date.now() - ts < 10000);
+  };
+
+  window._isCompletionEcho = function() {
+    return (Date.now() - _lastCompletionWrite < 8000);
+  };
+
+  // Allow app.js (handleUncomplete) to mark a completion write
+  window._markCompletionWrite = function() {
+    _lastCompletionWrite = Date.now();
+  };
+
+  window._isCategoryEcho = function() {
+    return (Date.now() - _lastCategoryWrite < 8000);
+  };
+
   window._getUnsavedTaskIds = function() {
     const unsaved = new Set();
-    // Local-only tasks have integer IDs (from store.nextId)
-    // DB tasks have UUID strings
     store.tasks.forEach(t => {
       if (typeof t.id === 'number') unsaved.add(t.id);
     });
-    // Also include any tasks in the pending writes queue
     pendingWrites.forEach(e => unsaved.add(e.task.id));
     return unsaved;
   };
 
-  // Wait for app.js to define `api` and `store`, then patch mutations
+  // ─── API PATCHING ───
+  // Wait for app.js to define `api` and `store`, then monkey-patch mutations
   function patchApiForSync() {
     if (typeof api === 'undefined' || typeof store === 'undefined') {
       setTimeout(patchApiForSync, 50);
@@ -127,26 +149,26 @@
         clearTimeout(task._pendingSaveTimer);
         delete task._pendingSaveTimer;
       }
-      _lastMutationTime = Date.now();
+      // Mark BEFORE save so echo suppression covers the entire round-trip
+      _markWritten(task.id);
       _inFlightSaves++;
       DB.saveTask(task).then(saved => {
         _inFlightSaves--;
-        if (saved && saved.id !== task.id) {
-          // Track the old local ID so handlers can still find this task
-          const oldId = task.id;
-          task._localId = oldId;
-          task.id = saved.id;
-          // Do NOT call render() here — it destroys in-flight animations
-          // and breaks setTimeout-captured DOM references in handleToggleDone.
-          // The next natural render cycle will pick up the new UUID.
+        if (saved) {
+          _markWritten(saved.id);  // also mark the UUID (may differ from local ID)
+          if (saved.id !== task.id) {
+            const oldId = task.id;
+            task._localId = oldId;
+            task.id = saved.id;
+            _markWritten(saved.id);
+          }
         }
       }).catch(err => {
         _inFlightSaves--;
         console.error('Sync error (saveTask), queueing retry:', err);
-        // Check if this task is already in the retry queue
         const existing = pendingWrites.find(e => e.task.id === task.id);
         if (existing) {
-          existing.task = { ...task };  // update with latest state
+          existing.task = { ...task };
         } else {
           pendingWrites.push({ task: { ...task }, retries: 0 });
         }
@@ -160,14 +182,10 @@
     }
 
     // ─── Patch addTask ───
-    // IMPORTANT: Don't save immediately — delay 300ms so the caller can finish
-    // mutations (set notes, isProject, voteUp, etc.) before the first INSERT.
-    // If voteUp or another mutation calls persistTask before the timer fires,
-    // persistTask cancels this timer and does a single save with all data.
     const _origAddTask = api.addTask.bind(api);
     api.addTask = function(title, category, recurring, recurDays, dueDate, drawer) {
-      _lastMutationTime = Date.now();
       const task = _origAddTask(title, category, recurring, recurDays, dueDate, drawer);
+      _markWritten(task.id);
       task._pendingSaveTimer = setTimeout(() => {
         delete task._pendingSaveTimer;
         persistTask(task);
@@ -178,31 +196,24 @@
     // ─── Patch deleteTask ───
     const _origDeleteTask = api.deleteTask.bind(api);
     api.deleteTask = function(id) {
-      _lastMutationTime = Date.now();
       const task = store.tasks.find(t => t.id === id);
+      _markWritten(id);
       _origDeleteTask(id);
       if (task) {
         _inFlightSaves++;
         const killedVersion = store.killedTasks.find(t => t.killedAt &&
           (t.id === id || t.title === task.title));
-        if (killedVersion) {
-          DB.saveTask({ ...killedVersion, killed: true }).then(() => {
-            _inFlightSaves--;
-          }).catch(err => {
-            _inFlightSaves--;
-            console.error('Sync error (deleteTask), queueing retry:', err);
-            pendingWrites.push({ task: { ...killedVersion, killed: true }, retries: 0 });
-          });
-        } else {
-          const killedTask = { ...task, killed: true, killedAt: new Date().toISOString() };
-          DB.saveTask(killedTask).then(() => {
-            _inFlightSaves--;
-          }).catch(err => {
-            _inFlightSaves--;
-            console.error('Sync error (deleteTask), queueing retry:', err);
-            pendingWrites.push({ task: killedTask, retries: 0 });
-          });
-        }
+        const toSave = killedVersion
+          ? { ...killedVersion, killed: true }
+          : { ...task, killed: true, killedAt: new Date().toISOString() };
+        DB.saveTask(toSave).then(saved => {
+          _inFlightSaves--;
+          if (saved) _markWritten(saved.id);
+        }).catch(err => {
+          _inFlightSaves--;
+          console.error('Sync error (deleteTask), queueing retry:', err);
+          pendingWrites.push({ task: toSave, retries: 0 });
+        });
       }
     };
 
@@ -271,8 +282,7 @@
       const task = _origToggleDone(id);
       persistTask(task);
       if (task && task.done) {
-        // NOTE: completion event is saved via logCompletion patch (called by bumpCounter)
-        // — NOT here, to avoid double-counting in Hall of Fame
+        // completion event saved via logCompletion patch (called by bumpCounter)
         persistTodayOrder();
         const respawned = store.tasks.find(t =>
           t.title === task.title && !t.done && t.id !== task.id && t.recurring);
@@ -297,7 +307,7 @@
       persistTodayOrder();
     };
 
-    // ─── Patch reorderToday (the public drag version) ───
+    // ─── Patch reorderToday (drag version) ───
     if (api.reorderToday) {
       const _origReorderPublic = api.reorderToday.bind(api);
       api.reorderToday = function(orderedIds) {
@@ -311,7 +321,6 @@
       const _origReorderProjects = api.reorderProjects.bind(api);
       api.reorderProjects = function(orderedIds) {
         _origReorderProjects(orderedIds);
-        // Persist all project tasks with updated order
         orderedIds.forEach(id => {
           const task = store.tasks.find(t => t.id === id);
           if (task) persistTask(task);
@@ -322,7 +331,7 @@
     // ─── Patch addDrawerCategory ───
     const _origAddCat = api.addDrawerCategory.bind(api);
     api.addDrawerCategory = function(key, label, color) {
-      _lastMutationTime = Date.now();
+      _lastCategoryWrite = Date.now();
       _origAddCat(key, label, color);
       DB.saveDrawerCategory({ key, label, color, sortOrder: Object.keys(store.drawerCategories).length })
         .catch(err => console.error('Sync error (addDrawerCategory):', err));
@@ -331,7 +340,7 @@
     // ─── Patch deleteDrawerCategory ───
     const _origDelCat = api.deleteDrawerCategory.bind(api);
     api.deleteDrawerCategory = function(key) {
-      _lastMutationTime = Date.now();
+      _lastCategoryWrite = Date.now();
       _origDelCat(key);
       DB.deleteDrawerCategory(key)
         .catch(err => console.error('Sync error (deleteDrawerCategory):', err));
@@ -348,7 +357,7 @@
     console.log('✓ Sync layer active — mutations will persist to Supabase');
   }
 
-  // Also patch saveCurrentNotes to persist after notes edit
+  // ─── Patch saveCurrentNotes ───
   function patchNotesSave() {
     if (typeof saveCurrentNotes === 'undefined') {
       setTimeout(patchNotesSave, 50);
@@ -361,13 +370,18 @@
     const _origSaveNotes = window.saveCurrentNotes;
     window.saveCurrentNotes = function() {
       _origSaveNotes();
-      _lastMutationTime = Date.now();
       clearTimeout(window._notesSyncTimer);
       window._notesSyncTimer = setTimeout(() => {
         if (typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null) {
           const task = store.tasks.find(t => t.id === currentNotesTaskId);
           if (task) {
-            DB.saveTask(task).catch(err => {
+            _markWritten(task.id);
+            _inFlightSaves++;
+            DB.saveTask(task).then(saved => {
+              _inFlightSaves--;
+              if (saved) _markWritten(saved.id);
+            }).catch(err => {
+              _inFlightSaves--;
               console.error('Sync error (notes), queueing retry:', err);
               pendingWrites.push({ task: { ...task }, retries: 0 });
             });
@@ -377,9 +391,7 @@
     };
   }
 
-  // Patch logCompletion to persist completion events to DB.
-  // This is the ONLY place completion events should be saved to DB.
-  // (toggleDone sync patch no longer saves them to avoid double-counting)
+  // ─── Patch logCompletion ───
   function patchBumpCounter() {
     if (typeof bumpCounter === 'undefined') {
       setTimeout(patchBumpCounter, 50);
@@ -393,7 +405,7 @@
       const _origLog = window.logCompletion;
       window.logCompletion = function() {
         _origLog();
-        _lastMutationTime = Date.now();
+        _lastCompletionWrite = Date.now();
         DB.saveCompletionEvent().catch(err =>
           console.error('Sync error (logCompletion):', err));
       };
