@@ -404,6 +404,18 @@ async function loadAndShowApp() {
 // 1. Flushes any pending writes (failed saves) to Supabase first
 // 2. Pulls latest state from Supabase
 // 3. Preserves any local-only tasks that haven't been saved yet
+// Fingerprint the store state for change detection.
+// Returns a string that changes when any task/killed/completion data changes.
+function _storeFingerprint() {
+  const taskPart = store.tasks.map(t =>
+    `${t.id}|${t.title}|${t.today}|${t.todayOrder}|${t.done}|${t.dueDate}|${t.drawer}|${t.notes}|${t.isProject}|${t.trackTime}|${t.killed}`
+  ).join(';');
+  const killedPart = store.killedTasks.map(t => `${t.id}|${t.killedAt}`).join(';');
+  const logPart = completionLog.length;
+  return `${taskPart}##${killedPart}##${logPart}`;
+}
+
+// Returns true if data changed (callers should re-render), false if skipped or unchanged
 async function refreshFromSupabase(force) {
   try {
     // Don't pull from DB if we have in-flight saves or recent mutations
@@ -411,13 +423,16 @@ async function refreshFromSupabase(force) {
     // Even forced refreshes (tab focus) respect in-flight saves to avoid clobbering
     if (window._isSafeToSync && !window._isSafeToSync()) {
       console.log('[Sync] Skipping refresh — local mutations in progress');
-      return;
+      return false;
     }
 
     // Step 1: Flush any pending writes before pulling fresh data
     if (window._flushSyncQueue) {
       await window._flushSyncQueue();
     }
+
+    // Snapshot current state BEFORE network call for change detection
+    const beforeFingerprint = _storeFingerprint();
 
     // Step 2: Pull fresh data from Supabase
     const data = await TinyApeDB.loadAllData();
@@ -426,7 +441,7 @@ async function refreshFromSupabase(force) {
     // A mutation could have happened while we were waiting for the response.
     if (window._isSafeToSync && !window._isSafeToSync()) {
       console.log('[Sync] Discarding refresh — local mutation happened during fetch');
-      return;
+      return false;
     }
 
     if (data) {
@@ -477,9 +492,19 @@ async function refreshFromSupabase(force) {
 
       // Surface drawer tasks that are now within 14 days
       api.surfaceDrawerTasks();
+
+      // Step 6: Check if data actually changed — skip re-render if not
+      const afterFingerprint = _storeFingerprint();
+      if (afterFingerprint === beforeFingerprint) {
+        console.log('[Sync] Data unchanged — skipping re-render');
+        return false;
+      }
+      return true;  // data changed, caller should re-render
     }
+    return false;
   } catch (err) {
     console.error('Error loading data:', err);
+    return false;
   }
 }
 
@@ -498,10 +523,12 @@ document.addEventListener('visibilitychange', async () => {
   }
 
   if (document.visibilityState === 'visible') {
-    await refreshFromSupabase(true);
+    const changed = await refreshFromSupabase(true);
     setDate();
-    render();
-    renderHallOfFame();
+    if (changed) {
+      render();
+      renderHallOfFame();
+    }
   }
 });
 
@@ -527,10 +554,13 @@ function startPeriodicSync() {
     if (document.visibilityState !== 'visible') return;
     if (document.getElementById('appPage').style.display === 'none') return;
 
-    await refreshFromSupabase();
+    const changed = await refreshFromSupabase();
     setDate();
-    render();
-    renderHallOfFame();
+    // Only re-render if data actually changed — prevents DOM flicker
+    if (changed) {
+      render();
+      renderHallOfFame();
+    }
   }, 30000);  // 30 seconds
 }
 
