@@ -3336,6 +3336,7 @@
     .backlog-item {
       padding: 10px 8px;
       gap: 6px;
+      border-radius: 0;  /* prevent red swipe bg from peeking through corners */
     }
     .backlog-actions {
       display: none;
