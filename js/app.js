@@ -1003,6 +1003,14 @@ function openAddModal(context) {
   renderAddModalActions();
   modal.classList.add('open');
   overlay.classList.add('open');
+
+  // On mobile, lock body scroll
+  if (window.innerWidth <= 640) {
+    window._modalScrollY = window.scrollY;
+    document.body.classList.add('modal-open');
+    document.body.style.top = `-${window._modalScrollY}px`;
+  }
+
   setTimeout(() => input.focus(), 100);
 }
 
@@ -1023,6 +1031,13 @@ function closeAddModal() {
 function _resetAddModal() {
   document.getElementById('addModal').classList.remove('open');
   document.getElementById('addModalOverlay').classList.remove('open');
+
+  // Restore body scroll on mobile
+  if (document.body.classList.contains('modal-open')) {
+    document.body.classList.remove('modal-open');
+    document.body.style.top = '';
+    window.scrollTo(0, window._modalScrollY || 0);
+  }
   const input = document.getElementById('addTaskInput');
   input.value = '';
   clearModalNotes();
@@ -2625,6 +2640,13 @@ function openNotesSidebar(id, anchorEl) {
   document.body.appendChild(card);
   notesCardEl = card;
 
+  // On mobile, lock body scroll to prevent background scrolling behind the card
+  if (window.innerWidth <= 640) {
+    window._notesScrollY = window.scrollY;
+    document.body.classList.add('notes-open');
+    document.body.style.top = `-${window._notesScrollY}px`;
+  }
+
   // Wire up title editing
   const titleEl = card.querySelector('#notesTitleEditable');
   titleEl.addEventListener('keydown', (e) => {
@@ -2729,6 +2751,14 @@ function closeNotesCard(skipRender) {
   }
   currentNotesTaskId = null;
   document.removeEventListener('click', handleNotesCardOutside);
+
+  // Restore body scroll on mobile
+  if (document.body.classList.contains('notes-open')) {
+    document.body.classList.remove('notes-open');
+    document.body.style.top = '';
+    window.scrollTo(0, window._notesScrollY || 0);
+  }
+
   if (!skipRender) render();
 }
 
