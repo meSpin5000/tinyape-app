@@ -2527,11 +2527,13 @@ function handleDeleteCategory(key) {
   showToast('Category removed');
 }
 
-// Theme toggle
+// Theme toggle — persist to localStorage
 document.getElementById('themeToggle').addEventListener('click', () => {
   const body = document.body;
   const isDark = body.getAttribute('data-theme') === 'dark';
-  body.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  const newTheme = isDark ? 'light' : 'dark';
+  body.setAttribute('data-theme', newTheme);
+  try { localStorage.setItem('tinyape-theme', newTheme); } catch(e) {}
   // Redraw ape with new theme colors
   if (typeof apeEl !== 'undefined' && apeEl) drawPixelApe(apeEl, apeArmFrame || 0);
   // Redraw all creature friends with new theme colors
@@ -2540,6 +2542,11 @@ document.getElementById('themeToggle').addEventListener('click', () => {
     headerCreatures.forEach(c => renderSprite(c.el, CREATURE_DEFS[c.defIndex], nowDark));
   }
 });
+// Restore theme on load (called early to avoid flash)
+try {
+  const saved = localStorage.getItem('tinyape-theme');
+  if (saved) document.body.setAttribute('data-theme', saved);
+} catch(e) {}
 
 // Date display
 function setDate() {
@@ -4317,6 +4324,12 @@ function spawnCreature() {
   const def = CREATURE_DEFS[defIndex];
   showUnlockBanner(def);
 
+  // Persist to Supabase for cross-device restoration
+  if (window.TinyApeDB && window.TinyApeDB.saveCreatureUnlock) {
+    window.TinyApeDB.saveCreatureUnlock(defIndex).catch(err =>
+      console.error('Error saving creature unlock:', err));
+  }
+
   const canvas = document.createElement('canvas');
   canvas.width = 16;
   canvas.height = 16;
@@ -4350,6 +4363,52 @@ function spawnCreature() {
   stopApeArmSwing();
   // Small delay so the creature is visible entering before ape reacts
   setTimeout(() => apeGreetAtSpot(creature, spot), 300);
+}
+
+// ─── Restore today's creatures from Supabase on page load ───
+function restoreCreaturesFromUnlocks(unlocks) {
+  if (!unlocks || unlocks.length === 0) return;
+
+  // Filter to today's unlocks only
+  const todayStr = new Date().toDateString();
+  const todayUnlocks = unlocks.filter(u => {
+    const d = new Date(u.unlockedAt);
+    return d.toDateString() === todayStr;
+  });
+
+  if (todayUnlocks.length === 0) return;
+
+  // Remove restored indices from the creature pool so they don't repeat
+  const restoredIndices = todayUnlocks.map(u => u.creatureIndex);
+  creaturePool = creaturePool.filter(i => !restoredIndices.includes(i));
+
+  const header = document.querySelector('header');
+  if (!header) return;
+
+  todayUnlocks.forEach((unlock, i) => {
+    const defIndex = unlock.creatureIndex;
+    const def = CREATURE_DEFS[defIndex];
+    if (!def) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 16;
+    canvas.height = 16;
+    canvas.className = 'pixel-creature';
+
+    // Place directly at a spot (no walk-in animation)
+    const spot = findOpenSpot();
+    canvas.style.left = spot + 'px';
+    header.appendChild(canvas);
+    renderSprite(canvas, def, isCreatureDark());
+
+    canvas.addEventListener('mouseenter', () => showCharTooltip(canvas, def.friend, def.surprise));
+    canvas.addEventListener('mouseleave', hideCharTooltip);
+
+    const creature = { el: canvas, defIndex, x: spot, state: 'idle', direction: 1, timer: null, isBig: false };
+    headerCreatures.push(creature);
+    updateCreatureSize(creature);
+    creatureIdle(creature);
+  });
 }
 
 // ─── Collision monitor — creatures gently move aside ───

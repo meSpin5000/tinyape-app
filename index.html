@@ -404,6 +404,14 @@ async function loadAndShowApp() {
   render();
   renderHallOfFame();
 
+  // Restore today's creature friends from Supabase
+  if (window._pendingCreatureUnlocks && typeof restoreCreaturesFromUnlocks === 'function') {
+    setTimeout(() => {
+      restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
+      delete window._pendingCreatureUnlocks;
+    }, 500);  // slight delay so header is fully rendered
+  }
+
   // Welcome toast
   if (store.tasks.length === 0 && store.killedTasks.length === 0) {
     setTimeout(() => showToast('Welcome to TinyApe! Add your first task to get started.'), 500);
@@ -489,6 +497,11 @@ async function refreshFromSupabase(force) {
         return n > max ? n : max;
       }, 0);
       store.nextId = Math.max(store.nextId || 0, maxId + 1);
+
+      // Store creature unlocks for restoration
+      if (data.creatureUnlocks && data.creatureUnlocks.length > 0) {
+        window._pendingCreatureUnlocks = data.creatureUnlocks;
+      }
 
       api.surfaceDrawerTasks();
 
