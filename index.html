@@ -683,24 +683,23 @@ document.addEventListener('visibilitychange', async () => {
   }
 
   if (document.visibilityState === 'visible') {
-    // If realtime was disconnected while hidden, do a full refresh
-    if (!_realtimeConnected) {
-      const changed = await refreshFromSupabase(true);
-      setDate();
-      if (changed) {
-        render(); renderHallOfFame();
-        // Restore any creature unlocks fetched during refresh
-        if (window._pendingCreatureUnlocks && typeof restoreCreaturesFromUnlocks === 'function') {
-          restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
-          delete window._pendingCreatureUnlocks;
-        }
+    // Always do a full refresh + reconnect when tab becomes visible.
+    // Mobile browsers kill WebSocket connections while backgrounded,
+    // and _realtimeConnected can be stale (Supabase thinks it's connected
+    // but the underlying socket is dead).
+    const changed = await refreshFromSupabase(true);
+    setDate();
+    if (changed) {
+      render(); renderHallOfFame();
+      // Restore any creature unlocks fetched during refresh
+      if (window._pendingCreatureUnlocks && typeof restoreCreaturesFromUnlocks === 'function') {
+        restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
+        delete window._pendingCreatureUnlocks;
       }
-      // Try to reconnect realtime
-      stopRealtimeSync();
-      startRealtimeSync();
-    } else {
-      setDate();
     }
+    // Always tear down and recreate the realtime channel
+    stopRealtimeSync();
+    startRealtimeSync();
   }
 });
 
@@ -734,7 +733,7 @@ function startPeriodicSync() {
       render();
       renderHallOfFame();
     }
-  }, 300000);  // 5 minutes (was 30 seconds)
+  }, 60000);  // 60 seconds — safety net for when realtime drops
 }
 
 boot();
