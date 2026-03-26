@@ -348,6 +348,43 @@ window.TinyApeDB = {
   },
 
   /**
+   * Delete the most recent completion event for today (for uncomplete)
+   * @returns {Promise<boolean>} True if deleted
+   */
+  async deleteLatestCompletionEvent() {
+    try {
+      if (!window.supabase) return false;
+      const userId = await this._getUserId();
+      if (!userId) return false;
+
+      // Find the most recent completion event for today
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      const { data, error: fetchErr } = await window.supabase
+        .from('completion_events')
+        .select('id')
+        .eq('user_id', userId)
+        .gte('created_at', todayStart.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (fetchErr || !data || data.length === 0) return false;
+
+      const { error: delErr } = await window.supabase
+        .from('completion_events')
+        .delete()
+        .eq('id', data[0].id)
+        .eq('user_id', userId);
+
+      return !delErr;
+    } catch (err) {
+      console.error('Error deleting completion event:', err);
+      return false;
+    }
+  },
+
+  /**
    * Load Hall of Fame best days from view
    * @returns {Promise<Array>} Array of best days
    */

@@ -797,7 +797,17 @@ function handleToggleDone(id) {
 
 function handleUncomplete(id) {
   api.toggleDone(id);
+  // Remove the most recent completion event from local log
+  if (completionLog.length > 0) {
+    completionLog.pop();
+  }
+  // Remove from DB
+  if (window.TinyApeDB && window.TinyApeDB.deleteLatestCompletionEvent) {
+    window.TinyApeDB.deleteLatestCompletionEvent().catch(err =>
+      console.error('Error removing completion event:', err));
+  }
   render();
+  renderHallOfFame();
   showToast('Task restored to On Deck');
 }
 

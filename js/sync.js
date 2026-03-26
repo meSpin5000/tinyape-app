@@ -32,8 +32,10 @@
   window._isSafeToSync = function() {
     if (_inFlightSaves > 0) return false;
     if (pendingWrites.length > 0) return false;
-    // Don't sync within 5 seconds of last mutation
-    if (Date.now() - _lastMutationTime < 5000) return false;
+    // Check for any pending save timers on tasks
+    if (store.tasks.some(t => t._pendingSaveTimer)) return false;
+    // Don't sync within 10 seconds of last mutation
+    if (Date.now() - _lastMutationTime < 10000) return false;
     return true;
   };
 
@@ -158,19 +160,27 @@
     // ─── Patch deleteTask ───
     const _origDeleteTask = api.deleteTask.bind(api);
     api.deleteTask = function(id) {
+      _lastMutationTime = Date.now();
       const task = store.tasks.find(t => t.id === id);
       _origDeleteTask(id);
       if (task) {
+        _inFlightSaves++;
         const killedVersion = store.killedTasks.find(t => t.killedAt &&
           (t.id === id || t.title === task.title));
         if (killedVersion) {
-          DB.saveTask({ ...killedVersion, killed: true }).catch(err => {
+          DB.saveTask({ ...killedVersion, killed: true }).then(() => {
+            _inFlightSaves--;
+          }).catch(err => {
+            _inFlightSaves--;
             console.error('Sync error (deleteTask), queueing retry:', err);
             pendingWrites.push({ task: { ...killedVersion, killed: true }, retries: 0 });
           });
         } else {
           const killedTask = { ...task, killed: true, killedAt: new Date().toISOString() };
-          DB.saveTask(killedTask).catch(err => {
+          DB.saveTask(killedTask).then(() => {
+            _inFlightSaves--;
+          }).catch(err => {
+            _inFlightSaves--;
             console.error('Sync error (deleteTask), queueing retry:', err);
             pendingWrites.push({ task: killedTask, retries: 0 });
           });
@@ -243,8 +253,8 @@
       const task = _origToggleDone(id);
       persistTask(task);
       if (task && task.done) {
-        DB.saveCompletionEvent().catch(err =>
-          console.error('Sync error (completionEvent):', err));
+        // NOTE: completion event is saved via logCompletion patch (called by bumpCounter)
+        // — NOT here, to avoid double-counting in Hall of Fame
         persistTodayOrder();
         const respawned = store.tasks.find(t =>
           t.title === task.title && !t.done && t.id !== task.id && t.recurring);
@@ -294,6 +304,7 @@
     // ─── Patch addDrawerCategory ───
     const _origAddCat = api.addDrawerCategory.bind(api);
     api.addDrawerCategory = function(key, label, color) {
+      _lastMutationTime = Date.now();
       _origAddCat(key, label, color);
       DB.saveDrawerCategory({ key, label, color, sortOrder: Object.keys(store.drawerCategories).length })
         .catch(err => console.error('Sync error (addDrawerCategory):', err));
@@ -302,6 +313,7 @@
     // ─── Patch deleteDrawerCategory ───
     const _origDelCat = api.deleteDrawerCategory.bind(api);
     api.deleteDrawerCategory = function(key) {
+      _lastMutationTime = Date.now();
       _origDelCat(key);
       DB.deleteDrawerCategory(key)
         .catch(err => console.error('Sync error (deleteDrawerCategory):', err));
@@ -331,6 +343,7 @@
     const _origSaveNotes = window.saveCurrentNotes;
     window.saveCurrentNotes = function() {
       _origSaveNotes();
+      _lastMutationTime = Date.now();
       clearTimeout(window._notesSyncTimer);
       window._notesSyncTimer = setTimeout(() => {
         if (typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null) {
@@ -346,7 +359,9 @@
     };
   }
 
-  // Patch bumpCounter to log completion events
+  // Patch logCompletion to persist completion events to DB.
+  // This is the ONLY place completion events should be saved to DB.
+  // (toggleDone sync patch no longer saves them to avoid double-counting)
   function patchBumpCounter() {
     if (typeof bumpCounter === 'undefined') {
       setTimeout(patchBumpCounter, 50);
@@ -360,6 +375,7 @@
       const _origLog = window.logCompletion;
       window.logCompletion = function() {
         _origLog();
+        _lastMutationTime = Date.now();
         DB.saveCompletionEvent().catch(err =>
           console.error('Sync error (logCompletion):', err));
       };

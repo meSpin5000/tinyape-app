@@ -408,7 +408,8 @@ async function refreshFromSupabase(force) {
   try {
     // Don't pull from DB if we have in-flight saves or recent mutations
     // (prevents overwriting local state with stale DB data)
-    if (!force && window._isSafeToSync && !window._isSafeToSync()) {
+    // Even forced refreshes (tab focus) respect in-flight saves to avoid clobbering
+    if (window._isSafeToSync && !window._isSafeToSync()) {
       console.log('[Sync] Skipping refresh — local mutations in progress');
       return;
     }
@@ -418,24 +419,28 @@ async function refreshFromSupabase(force) {
       await window._flushSyncQueue();
     }
 
-    // Step 2: Remember local-only tasks (integer IDs = never saved to DB)
-    const localOnlyTasks = store.tasks.filter(t => typeof t.id === 'number');
-
-    // Step 3: Pull fresh data from Supabase
+    // Step 2: Pull fresh data from Supabase
     const data = await TinyApeDB.loadAllData();
 
+    // Step 3: Re-check safety AFTER the network call completes.
+    // A mutation could have happened while we were waiting for the response.
+    if (window._isSafeToSync && !window._isSafeToSync()) {
+      console.log('[Sync] Discarding refresh — local mutation happened during fetch');
+      return;
+    }
+
     if (data) {
+      // Step 4: Capture local-only tasks RIGHT BEFORE replacing the store
+      // (must be after the network call, not before, to catch tasks created during fetch)
+      const localOnlyTasks = store.tasks.filter(t => typeof t.id === 'number');
+
       // Replace store with DB data
       store.tasks = data.tasks || [];
       store.killedTasks = data.killedTasks || [];
 
-      // Step 4: Re-add any local-only tasks that didn't make it to DB yet
-      // (These will be retried on next sync cycle)
+      // Step 5: Re-add any local-only tasks that didn't make it to DB yet
       if (localOnlyTasks.length > 0) {
         localOnlyTasks.forEach(localTask => {
-          // Check if this local task already made it to the DB.
-          // After saving, the task's _localId is set to the old integer ID.
-          // Also check by title + similar timestamps as a fallback.
           const alreadyInDb = store.tasks.some(t =>
             t._localId === localTask.id ||
             (t.title === localTask.title && t.today === localTask.today && t.done === localTask.done)
@@ -481,11 +486,33 @@ async function refreshFromSupabase(force) {
 // ─── CROSS-DEVICE SYNC ───
 // When the user switches back to this tab, re-fetch everything from Supabase
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible' && document.getElementById('appPage').style.display !== 'none') {
-    await refreshFromSupabase(true);  // force on tab focus
+  if (document.getElementById('appPage').style.display === 'none') return;
+
+  if (document.visibilityState === 'hidden') {
+    // Mobile safety: save any open notes/title before tab gets killed
+    if (typeof saveCurrentNotes === 'function') saveCurrentNotes();
+    // Flush pending writes so data isn't lost if the tab is killed
+    if (window._flushSyncQueue) {
+      try { await window._flushSyncQueue(); } catch(e) { /* best-effort */ }
+    }
+  }
+
+  if (document.visibilityState === 'visible') {
+    await refreshFromSupabase(true);
     setDate();
     render();
     renderHallOfFame();
+  }
+});
+
+// ─── BEFORE UNLOAD SAFETY NET ───
+// Last-chance save when user closes tab or navigates away
+window.addEventListener('beforeunload', () => {
+  if (typeof saveCurrentNotes === 'function') saveCurrentNotes();
+  // Use sendBeacon-style sync if possible (non-blocking)
+  // For now, best-effort flush — browser may kill this quickly
+  if (window._flushSyncQueue) {
+    window._flushSyncQueue().catch(() => {});
   }
 });
 
