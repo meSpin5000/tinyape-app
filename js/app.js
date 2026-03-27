@@ -2859,22 +2859,37 @@ function autoGrowTextarea(el) {
 function closeNotesCard(skipRender) {
   if (notesCardEl && currentNotesTaskId !== null) {
     const task = store.tasks.find(t => t.id === currentNotesTaskId);
+    let needsSave = false;
     // Save title if edited
     const titleEl = notesCardEl.querySelector('#notesTitleEditable');
     if (titleEl && task) {
       const newTitle = titleEl.textContent.trim();
       if (newTitle && newTitle !== task.title) {
         task.title = newTitle;
-        if (window.TinyApeDB) {
-          window.TinyApeDB.saveTask(task).catch(err =>
-            console.error('Sync error (title edit on close):', err));
-        }
+        needsSave = true;
       }
     }
     // Save contenteditable content before destroying the card
     const editable = notesCardEl.querySelector('#notesEditable');
     if (editable && task) {
-      task.notes = notesHtmlToText(editable);
+      const newNotes = notesHtmlToText(editable);
+      if (newNotes !== task.notes) { needsSave = true; }
+      task.notes = newNotes;
+    }
+    // Cancel any orphaned debounce timer from saveCurrentNotes sync patch
+    if (window._notesSyncTimer) {
+      clearTimeout(window._notesSyncTimer);
+      window._notesSyncTimer = null;
+    }
+    // Persist through sync layer (echo suppression + in-flight tracking)
+    // instead of direct DB call which caused drawer revert race condition
+    if (needsSave && task) {
+      if (window._syncSaveTask) {
+        window._syncSaveTask(task);
+      } else if (window.TinyApeDB) {
+        window.TinyApeDB.saveTask(task).catch(err =>
+          console.error('Sync error (close notes card):', err));
+      }
     }
     notesCardEl.remove();
     notesCardEl = null;

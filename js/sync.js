@@ -368,6 +368,15 @@
     console.log('✓ Sync layer active — mutations will persist to Supabase');
   }
 
+  // ─── Expose sync-safe task save for use outside patched API methods ───
+  // Used by closeNotesCard to persist title/notes edits through the sync layer
+  // instead of calling TinyApeDB.saveTask directly (which bypasses echo suppression).
+  window._syncSaveTask = function(task) {
+    if (!task) return;
+    _markWritten(task.id);
+    persistTask(task);
+  };
+
   // ─── Patch saveCurrentNotes ───
   function patchNotesSave() {
     if (typeof saveCurrentNotes === 'undefined') {
