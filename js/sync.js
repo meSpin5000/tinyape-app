@@ -102,7 +102,7 @@
   window._isEcho = function(id) {
     if (id == null) return false;
     const ts = _recentWrites.get(String(id));
-    return ts != null && (Date.now() - ts < 10000);
+    return ts != null && (Date.now() - ts < 15000);
   };
 
   window._isCompletionEcho = function() {

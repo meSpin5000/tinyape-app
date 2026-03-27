@@ -423,13 +423,21 @@ function _storeFingerprint() {
 
 async function refreshFromSupabase(force) {
   try {
-    if (window._isSafeToSync && !window._isSafeToSync()) {
+    // Block refresh while local writes are in-flight (unless forced)
+    if (!force && window._isSafeToSync && !window._isSafeToSync()) {
       console.log('[Sync] Skipping refresh — local writes in progress');
       return false;
     }
 
+    // Always flush pending writes before pulling from DB
     if (window._flushSyncQueue) {
       await window._flushSyncQueue();
+    }
+
+    // If writes are STILL in-flight after flush, don't overwrite local state
+    if (window._isSafeToSync && !window._isSafeToSync()) {
+      console.log('[Sync] Writes still in-flight after flush — skipping refresh');
+      return false;
     }
 
     const beforeFP = _storeFingerprint();
@@ -445,12 +453,18 @@ async function refreshFromSupabase(force) {
       const localOnlyTasks = store.tasks.filter(t => typeof t.id === 'number');
 
       // Snapshot local state of recently-written tasks so stale DB reads
-      // don't revert drawer/today/done flags during the echo window
-      const localSnap = new Map();
+      // don't revert flags during the echo window. Cover BOTH active and killed.
+      const localSnap = new Map();     // id -> { drawer, today, todayOrder, done, drawerCategory }
+      const localKilled = new Set();   // ids of tasks killed locally within echo window
       if (window._isEcho) {
         store.tasks.forEach(t => {
           if (window._isEcho(t.id)) {
             localSnap.set(String(t.id), { drawer: t.drawer, today: t.today, todayOrder: t.todayOrder, done: t.done, drawerCategory: t.drawerCategory });
+          }
+        });
+        store.killedTasks.forEach(t => {
+          if (window._isEcho(t.id)) {
+            localKilled.add(String(t.id));
           }
         });
       }
@@ -463,6 +477,24 @@ async function refreshFromSupabase(force) {
         store.tasks.forEach(t => {
           const snap = localSnap.get(String(t.id));
           if (snap) Object.assign(t, snap);
+        });
+      }
+
+      // Protect recently-killed tasks: if DB hasn't caught up yet,
+      // the task may still be in data.tasks as non-killed. Move it back.
+      if (localKilled.size > 0) {
+        const toMove = [];
+        store.tasks = store.tasks.filter(t => {
+          if (localKilled.has(String(t.id))) {
+            toMove.push(t);
+            return false;
+          }
+          return true;
+        });
+        toMove.forEach(t => {
+          if (!store.killedTasks.some(k => k.id === t.id)) {
+            store.killedTasks.push({ ...t, killed: true, killedAt: t.killedAt || new Date().toISOString() });
+          }
         });
       }
 
