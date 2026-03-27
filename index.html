@@ -121,7 +121,7 @@
 <body data-theme="light">
 
 <!-- ─── LOGIN PAGE ─── -->
-<div id="loginPage" class="login-page">
+<div id="loginPage" class="login-page" style="display:none;">
   <div class="login-card">
     <div class="login-logo">TinyApe</div>
     <div class="login-tagline">Swing Through the Day</div>
@@ -133,7 +133,7 @@
 </div>
 
 <!-- ─── LOADING STATE ─── -->
-<div id="loadingPage" class="app-loading" style="display:none;">
+<div id="loadingPage" class="app-loading">
   Loading your tasks...
 </div>
 
@@ -357,6 +357,7 @@ async function boot() {
   if (user) {
     await loadAndShowApp();
   } else {
+    document.getElementById('loadingPage').style.display = 'none';
     document.getElementById('loginPage').style.display = 'flex';
   }
 
