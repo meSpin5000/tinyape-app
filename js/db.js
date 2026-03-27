@@ -54,6 +54,7 @@ window.TinyApeDB = {
       trackTime: dbTask.track_time || false,
       projectOrder: dbTask.project_order,
       timeSessions: dbTask.time_sessions || [],
+      killed: dbTask.killed || false,
       killedAt: dbTask.killed_at,
       createdAt: dbTask.created_at,
       updatedAt: dbTask.updated_at,

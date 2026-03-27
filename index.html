@@ -602,14 +602,10 @@ function startRealtimeSync() {
     event: 'UPDATE', schema: 'public', table: 'tasks'
   }, (payload) => {
     const row = payload.new;
-    const isEcho = window._isEcho && window._isEcho(row.id);
-    if (isEcho) {
-      console.log('[Realtime] Task UPDATE (echo suppressed):', row.title, 'killed:', row.killed, 'drawer:', row.drawer);
-      return;
-    }
+    if (window._isEcho && window._isEcho(row.id)) return;
     // Don't overwrite a task the user is actively editing
     if (typeof currentNotesTaskId !== 'undefined' && row.id === currentNotesTaskId) return;
-    console.log('[Realtime] Task UPDATE (applying):', row.title, 'killed:', row.killed, 'drawer:', row.drawer, 'id:', row.id);
+    console.log('[Realtime] Task UPDATE:', row.title, 'killed:', row.killed, 'drawer:', row.drawer);
     const jsTask = TinyApeDB._mapDbTaskToJs(row);
     const idx = store.tasks.findIndex(t => t.id === row.id);
     const kIdx = store.killedTasks.findIndex(t => t.id === row.id);
