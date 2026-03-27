@@ -1821,8 +1821,10 @@ function handleAddDrawerCategory() {
   form.innerHTML = `
     <input type="text" id="newDrawerCatName" placeholder="Category name…" />
     <div class="drawer-cat-colors">${colorsHtml}</div>
-    <button class="drawer-cat-form-save" onclick="saveNewDrawerCategory()">Add</button>
-    <button class="drawer-cat-form-cancel" onclick="document.getElementById('drawerCatForm').remove()">✕</button>
+    <div class="drawer-cat-form-actions">
+      <button class="drawer-cat-form-save" onclick="saveNewDrawerCategory()">Add</button>
+      <button class="drawer-cat-form-cancel" onclick="document.getElementById('drawerCatForm').remove()">✕</button>
+    </div>
   `;
 
   const pillsEl = document.getElementById('drawerCatPills');

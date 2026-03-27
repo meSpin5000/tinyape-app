@@ -2019,64 +2019,85 @@
   }
   .drawer-cat-form {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    margin-top: 6px;
-    padding: 8px;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 8px;
+    padding: 12px;
     background: var(--bg-secondary);
-    border-radius: 6px;
+    border-radius: 8px;
+    border: 1px solid var(--border-light);
   }
   .drawer-cat-form input[type="text"] {
-    flex: 1;
-    padding: 4px 8px;
+    width: 100%;
+    padding: 8px 10px;
     border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 11px;
+    border-radius: 6px;
+    font-size: 13px;
     font-family: Inter, sans-serif;
     background: var(--bg);
     color: var(--text);
     outline: none;
+    transition: border-color var(--transition);
+    box-sizing: border-box;
+  }
+  .drawer-cat-form input[type="text"]:focus {
+    border-color: var(--accent-red);
+  }
+  .drawer-cat-form input[type="text"]::placeholder {
+    color: var(--text-muted);
   }
   .drawer-cat-colors {
     display: flex;
-    gap: 4px;
-    flex-basis: 100%;
+    gap: 6px;
+    flex-wrap: wrap;
   }
   .drawer-cat-color-opt {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     cursor: pointer;
     border: 2px solid transparent;
     transition: border-color 0.15s, transform 0.15s;
   }
   .drawer-cat-color-opt:hover {
-    transform: scale(1.2);
+    transform: scale(1.15);
   }
   .drawer-cat-color-opt.selected {
     border-color: var(--text);
   }
+  .drawer-cat-form-actions {
+    display: flex;
+    gap: 6px;
+  }
   .drawer-cat-form-save {
-    padding: 3px 10px;
-    border-radius: 4px;
+    padding: 6px 14px;
+    border-radius: 6px;
     border: none;
     background: var(--accent-red);
     color: #fff;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     font-family: Inter, sans-serif;
     cursor: pointer;
+    transition: opacity var(--transition);
+  }
+  .drawer-cat-form-save:hover {
+    opacity: 0.85;
   }
   .drawer-cat-form-cancel {
-    padding: 3px 8px;
-    border-radius: 4px;
+    padding: 6px 10px;
+    border-radius: 6px;
     border: 1px solid var(--border);
     background: none;
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: 12px;
     font-family: Inter, sans-serif;
     cursor: pointer;
+    transition: all var(--transition);
+  }
+  .drawer-cat-form-cancel:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-secondary);
   }
   .drawer-cat-pill {
     display: flex;
