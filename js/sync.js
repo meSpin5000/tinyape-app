@@ -197,6 +197,7 @@
     const _origDeleteTask = api.deleteTask.bind(api);
     api.deleteTask = function(id) {
       const task = store.tasks.find(t => t.id === id);
+      console.log('[Sync:DELETE] Killing task:', id, task ? task.title : '(not found)', 'drawer:', task && task.drawer);
       _markWritten(id);
       _origDeleteTask(id);
       if (task) {
@@ -206,14 +207,22 @@
         const toSave = killedVersion
           ? { ...killedVersion, killed: true }
           : { ...task, killed: true, killedAt: new Date().toISOString() };
+        console.log('[Sync:DELETE] Saving to DB with killed:true, id:', toSave.id);
         DB.saveTask(toSave).then(saved => {
           _inFlightSaves--;
-          if (saved) _markWritten(saved.id);
+          if (saved) {
+            _markWritten(saved.id);
+            console.log('[Sync:DELETE] ✅ DB confirmed kill:', saved.id, saved.title, 'killed:', saved.killed);
+          } else {
+            console.error('[Sync:DELETE] ❌ DB returned null — save may have failed silently!');
+          }
         }).catch(err => {
           _inFlightSaves--;
-          console.error('Sync error (deleteTask), queueing retry:', err);
+          console.error('[Sync:DELETE] ❌ DB error:', err);
           pendingWrites.push({ task: toSave, retries: 0 });
         });
+      } else {
+        console.error('[Sync:DELETE] ❌ Task not found in store.tasks! ID:', id);
       }
     };
 

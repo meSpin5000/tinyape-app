@@ -471,6 +471,11 @@ async function refreshFromSupabase(force) {
 
       store.tasks = data.tasks || [];
       store.killedTasks = data.killedTasks || [];
+      // Diagnostic: log drawer tasks from DB to track resurrections
+      const drawerFromDb = data.tasks ? data.tasks.filter(t => t.drawer) : [];
+      if (drawerFromDb.length > 0) {
+        console.log('[Sync:REFRESH] Drawer tasks from DB:', drawerFromDb.map(t => `${t.title} (killed:${t.killed})`));
+      }
 
       // Re-apply local state for in-flight writes (prevents stale DB overwrite)
       if (localSnap.size > 0) {
@@ -597,10 +602,14 @@ function startRealtimeSync() {
     event: 'UPDATE', schema: 'public', table: 'tasks'
   }, (payload) => {
     const row = payload.new;
-    if (window._isEcho && window._isEcho(row.id)) return;
+    const isEcho = window._isEcho && window._isEcho(row.id);
+    if (isEcho) {
+      console.log('[Realtime] Task UPDATE (echo suppressed):', row.title, 'killed:', row.killed, 'drawer:', row.drawer);
+      return;
+    }
     // Don't overwrite a task the user is actively editing
     if (typeof currentNotesTaskId !== 'undefined' && row.id === currentNotesTaskId) return;
-    console.log('[Realtime] Task UPDATE:', row.title);
+    console.log('[Realtime] Task UPDATE (applying):', row.title, 'killed:', row.killed, 'drawer:', row.drawer, 'id:', row.id);
     const jsTask = TinyApeDB._mapDbTaskToJs(row);
     const idx = store.tasks.findIndex(t => t.id === row.id);
     const kIdx = store.killedTasks.findIndex(t => t.id === row.id);
@@ -612,6 +621,9 @@ function startRealtimeSync() {
       else { store.killedTasks.push(jsTask); }
     } else {
       // Task is active — move from killed to active if needed
+      if (kIdx !== -1) {
+        console.warn('[Realtime] ⚠️ RESURRECTING killed task:', row.title, 'killed:', row.killed, 'drawer:', row.drawer);
+      }
       if (kIdx !== -1) store.killedTasks.splice(kIdx, 1);
       if (idx !== -1) { store.tasks[idx] = jsTask; }
       else { store.tasks.push(jsTask); }
