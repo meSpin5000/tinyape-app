@@ -542,18 +542,40 @@ function openArchivePopup(type) {
         const bDate = b.completedAt || '';
         return bDate.localeCompare(aDate);
       });
-      list.innerHTML = sorted.map(t => {
+
+      // Group by time period
+      const now = new Date();
+      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+      let currentGroup = '';
+      let html = '';
+      sorted.forEach(t => {
+        const completed = t.completedAt ? new Date(t.completedAt) : null;
+        let group;
+        if (!completed || completed >= thisMonthStart) {
+          group = 'THIS MONTH';
+        } else if (completed >= lastMonthStart) {
+          group = 'LAST MONTH';
+        } else {
+          group = 'OLDER';
+        }
+        if (group !== currentGroup) {
+          currentGroup = group;
+          html += `<div class="archive-time-group">${group}</div>`;
+        }
         const dateStr = formatCompletedDate(t.completedAt);
         const projInfo = t.isProject ? '<span class="project-indicator">⏱</span>' : '';
         const totalMins = (t.timeSessions || []).reduce((sum, s) => sum + s.minutes, 0);
         const timeInfo = totalMins ? `<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">${formatMinutes(totalMins)}</span>` : '';
-        return `
+        html += `
           <div class="completed-task">
             <span class="done-check uncheckable" onclick="handleUncomplete(${qid(t.id)}); closeArchivePopup();" title="Undo — restore task">✓</span>
             <span class="done-title">${t.title}${projInfo}${timeInfo}</span>
             ${dateStr ? `<span class="done-date">${dateStr}</span>` : ''}
           </div>`;
-      }).join('');
+      });
+      list.innerHTML = html;
     }
   } else {
     title.textContent = 'Killed';
@@ -564,7 +586,7 @@ function openArchivePopup(type) {
       list.innerHTML = killed.map((t, idx) => `
         <div class="completed-task">
           <span class="done-check killed-check">✕</span>
-          <span class="done-title">${t.title}</span>
+          <span class="done-title killed-title">${t.title}</span>
           <button class="restore-btn" onclick="handleRestoreTask(${idx}); closeArchivePopup();" title="Restore task">↩</button>
         </div>`).join('');
     }

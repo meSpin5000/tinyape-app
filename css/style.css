@@ -733,10 +733,10 @@
     flex-shrink: 0;
     transition: all var(--transition);
   }
-  .checkbox:hover { border-color: var(--accent-green); background: rgba(42,125,79,0.08); }
+  .checkbox:hover { border-color: var(--accent-red); background: rgba(229,46,10,0.08); }
   .checkbox.checked {
-    background: var(--accent-green);
-    border-color: var(--accent-green);
+    background: var(--accent-red);
+    border-color: var(--accent-red);
   }
   .checkbox.checked::after {
     content: '✓';
@@ -1805,7 +1805,7 @@
     width: 16px;
     height: 16px;
     border-radius: 3px;
-    background: var(--accent-green);
+    background: var(--accent-red);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1825,12 +1825,30 @@
     transform: scale(1.1);
   }
   .archive-popup-list .completed-task .done-title {
-    text-decoration: line-through;
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--text);
+  }
+  /* Killed tasks keep strikethrough */
+  .archive-popup-list .completed-task .done-title.killed-title {
+    text-decoration: line-through;
+    color: var(--text-muted);
+  }
+  /* Time group subheaders */
+  .archive-time-group {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    padding: 12px 20px 4px;
+    font-family: 'Inter', sans-serif;
+  }
+  .archive-time-group:first-child {
+    padding-top: 8px;
   }
   .archive-popup-list .completed-task .done-date {
     font-size: 11px;
