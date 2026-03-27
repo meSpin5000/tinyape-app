@@ -99,7 +99,7 @@
   <!-- PROJECTS -->
   <div id="projectsSection" class="collapsible-section" data-section="projects">
     <div class="section-header section-header-collapsible" onclick="toggleSectionCollapse('projects')">
-      <h2 class="section-title"><span class="section-chevron">›</span> Projects</h2>
+      <h2 class="section-title"><span class="section-chevron">›</span> Projects <span class="section-count" id="projectsCount"></span></h2>
       <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation()">
         <button class="section-add-btn" onclick="openAddModal('project')" title="Add project">+ Add</button>
       </div>
@@ -115,7 +115,7 @@
   <!-- ON DECK -->
   <div id="onDeckSection" class="collapsible-section" data-section="onDeck">
     <div class="section-header section-header-collapsible" onclick="toggleSectionCollapse('onDeck')">
-      <h2 class="section-title"><span class="section-chevron">›</span> On Deck <span style="font-size:10px; color:var(--text-muted); font-weight:400; font-style:italic; font-family:Inter,sans-serif; margin-left:4px; vertical-align:baseline;">[click to vote up]</span></h2>
+      <h2 class="section-title"><span class="section-chevron">›</span> On Deck <span class="section-count" id="onDeckCount"></span></h2>
       <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation()">
         <button class="section-add-btn" onclick="openAddModal('ondeck')" title="Add task">+ Add</button>
       </div>
@@ -128,7 +128,7 @@
   <!-- DRAWER (inline section for all breakpoints) -->
   <div id="drawerSection" class="collapsible-section" data-section="drawer">
     <div class="section-header section-header-collapsible" onclick="toggleSectionCollapse('drawer')">
-      <h2 class="section-title"><span class="section-chevron">›</span> Drawer <span class="drawer-count" id="drawerCount"></span></h2>
+      <h2 class="section-title"><span class="section-chevron">›</span> Drawer <span class="section-count" id="drawerCount"></span></h2>
       <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation()">
         <button class="section-add-btn" onclick="openAddModal('drawer')" title="Add to drawer">+ Add</button>
       </div>

@@ -584,6 +584,9 @@ function renderProjectsList() {
   const emptyEl = document.getElementById('projectsEmpty');
   const projects = api.getProjectTasks();
 
+  const countEl = document.getElementById('projectsCount');
+  if (countEl) countEl.textContent = projects.length ? `(${projects.length})` : '';
+
   if (!projects.length) {
     el.innerHTML = '';
     if (emptyEl) emptyEl.style.display = '';
@@ -661,6 +664,9 @@ function renderBacklogItem(t) {
 function renderBacklog() {
   const el = document.getElementById('backlogList');
   const tasks = api.getBacklogTasks();
+
+  const onDeckCountEl = document.getElementById('onDeckCount');
+  if (onDeckCountEl) onDeckCountEl.textContent = tasks.length ? `(${tasks.length})` : '';
 
   const now = new Date(); now.setHours(0,0,0,0);
   let olderCount = 0;

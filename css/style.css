@@ -820,8 +820,8 @@
     transform: rotate(0deg);
   }
 
-  /* Drawer count in section header */
-  .drawer-count {
+  /* Section counts in collapsible headers */
+  .section-count, .drawer-count {
     font-size: 12px;
     color: var(--text-muted);
     font-weight: 400;

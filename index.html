@@ -205,7 +205,7 @@
   <!-- PROJECTS -->
   <div id="projectsSection" class="collapsible-section" data-section="projects">
     <div class="section-header section-header-collapsible" onclick="toggleSectionCollapse('projects')">
-      <h2 class="section-title"><span class="section-chevron">›</span> Projects</h2>
+      <h2 class="section-title"><span class="section-chevron">›</span> Projects <span class="section-count" id="projectsCount"></span></h2>
       <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation()">
         <button class="section-add-btn" onclick="openAddModal('project')" title="Add project">+ Add</button>
       </div>
@@ -221,7 +221,7 @@
   <!-- ON DECK -->
   <div id="onDeckSection" class="collapsible-section" data-section="onDeck">
     <div class="section-header section-header-collapsible" onclick="toggleSectionCollapse('onDeck')">
-      <h2 class="section-title"><span class="section-chevron">›</span> On Deck <span style="font-size:10px; color:var(--text-muted); font-weight:400; font-style:italic; font-family:Inter,sans-serif; margin-left:4px; vertical-align:baseline;">[click to vote up]</span></h2>
+      <h2 class="section-title"><span class="section-chevron">›</span> On Deck <span class="section-count" id="onDeckCount"></span></h2>
       <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation()">
         <button class="section-add-btn" onclick="openAddModal('ondeck')" title="Add task">+ Add</button>
       </div>
@@ -234,7 +234,7 @@
   <!-- DRAWER (inline section for all breakpoints) -->
   <div id="drawerSection" class="collapsible-section" data-section="drawer">
     <div class="section-header section-header-collapsible" onclick="toggleSectionCollapse('drawer')">
-      <h2 class="section-title"><span class="section-chevron">›</span> Drawer <span class="drawer-count" id="drawerCount"></span></h2>
+      <h2 class="section-title"><span class="section-chevron">›</span> Drawer <span class="section-count" id="drawerCount"></span></h2>
       <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation()">
         <button class="section-add-btn" onclick="openAddModal('drawer')" title="Add to drawer">+ Add</button>
       </div>
@@ -444,8 +444,27 @@ async function refreshFromSupabase(force) {
     if (data) {
       const localOnlyTasks = store.tasks.filter(t => typeof t.id === 'number');
 
+      // Snapshot local state of recently-written tasks so stale DB reads
+      // don't revert drawer/today/done flags during the echo window
+      const localSnap = new Map();
+      if (window._isEcho) {
+        store.tasks.forEach(t => {
+          if (window._isEcho(t.id)) {
+            localSnap.set(String(t.id), { drawer: t.drawer, today: t.today, todayOrder: t.todayOrder, done: t.done, drawerCategory: t.drawerCategory });
+          }
+        });
+      }
+
       store.tasks = data.tasks || [];
       store.killedTasks = data.killedTasks || [];
+
+      // Re-apply local state for in-flight writes (prevents stale DB overwrite)
+      if (localSnap.size > 0) {
+        store.tasks.forEach(t => {
+          const snap = localSnap.get(String(t.id));
+          if (snap) Object.assign(t, snap);
+        });
+      }
 
       // Re-add local-only tasks not yet in DB
       if (localOnlyTasks.length > 0) {
