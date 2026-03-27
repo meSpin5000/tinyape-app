@@ -29,15 +29,15 @@
     box-shadow: var(--shadow-lg);
     text-align: center;
   }
+  .login-logo {
+    font-family: 'Bagel Fat One', cursive;
+    font-size: 42px;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
   .login-mascot {
     margin-bottom: 16px;
     line-height: 0;
-  }
-  .login-logo {
-    font-family: 'Bagel Fat One', cursive;
-    font-size: 36px;
-    color: var(--text);
-    margin-bottom: 2px;
   }
   .login-tagline {
     font-family: 'Source Serif 4', serif;
@@ -148,8 +148,9 @@
 <!-- ─── LOGIN PAGE ─── -->
 <div id="loginPage" class="login-page" style="display:none;">
   <div class="login-card">
+    <div class="login-logo">TinyApe</div>
     <div class="login-mascot">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="5 5 14 16" width="64" height="73" style="image-rendering:pixelated;">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="5 5 14 16" width="40" height="46" style="image-rendering:pixelated;">
         <rect x="9" y="6" width="6" height="2" fill="#8B4513"/><rect x="8" y="7" width="1" height="2" fill="#8B4513"/>
         <rect x="15" y="7" width="1" height="2" fill="#8B4513"/><rect x="8" y="8" width="8" height="2" fill="#8B4513"/>
         <rect x="9" y="10" width="6" height="1" fill="#D2A068"/><rect x="10" y="11" width="4" height="1" fill="#D2A068"/>
@@ -173,7 +174,6 @@
         <rect x="13" y="17" width="1" height="2" fill="#8B4513"/><rect x="13" y="19" width="2" height="1" fill="#5C2D0A"/>
       </svg>
     </div>
-    <div class="login-logo">TinyApe</div>
     <div class="login-tagline">Small and powerful.</div>
     <label class="login-label" for="loginEmail">Email</label>
     <input type="email" class="login-input" id="loginEmail" placeholder="you@example.com" autocomplete="email">
