@@ -583,12 +583,39 @@ function openArchivePopup(type) {
     if (killed.length === 0) {
       list.innerHTML = '<div class="archive-popup-empty">No killed tasks.</div>';
     } else {
-      list.innerHTML = killed.map((t, idx) => `
-        <div class="completed-task">
-          <span class="done-check killed-check">✕</span>
-          <span class="done-title killed-title">${t.title}</span>
-          <button class="restore-btn" onclick="handleRestoreTask(${idx}); closeArchivePopup();" title="Restore task">↩</button>
-        </div>`).join('');
+      // Sort by killedAt descending
+      const sorted = [...killed].map((t, origIdx) => ({ ...t, _killedIdx: origIdx }))
+        .sort((a, b) => (b.killedAt || '').localeCompare(a.killedAt || ''));
+
+      const now = new Date();
+      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+      let currentGroup = '';
+      let html = '';
+      sorted.forEach(t => {
+        const killedDate = t.killedAt ? new Date(t.killedAt) : null;
+        let group;
+        if (!killedDate || killedDate >= thisMonthStart) {
+          group = 'THIS MONTH';
+        } else if (killedDate >= lastMonthStart) {
+          group = 'LAST MONTH';
+        } else {
+          group = 'OLDER';
+        }
+        if (group !== currentGroup) {
+          currentGroup = group;
+          html += `<div class="archive-time-group">${group}</div>`;
+        }
+        const dateStr = t.killedAt ? fmtDate(new Date(t.killedAt)) : '';
+        html += `
+          <div class="completed-task">
+            <span class="done-check killed-check uncheckable" onclick="handleRestoreTask(${t._killedIdx}); closeArchivePopup();" title="Restore task">✕</span>
+            <span class="done-title killed-title">${t.title}</span>
+            ${dateStr ? `<span class="done-date">${dateStr}</span>` : ''}
+          </div>`;
+      });
+      list.innerHTML = html;
     }
   }
 
