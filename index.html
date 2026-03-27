@@ -6,10 +6,20 @@
 <title>TinyApe - Small and powerful.</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Bagel+Fat+One&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <style>
   /* ─── LOGIN PAGE ─── */
+  :root {
+    --login-mascot-body: #FBE8C8;
+    --login-mascot-stroke: #1a1a1a;
+    --login-mascot-snout: #E8D5B0;
+  }
+  [data-theme="dark"] {
+    --login-mascot-body: #f5f0e6;
+    --login-mascot-stroke: #f5f0e6;
+    --login-mascot-snout: #d4c9b8;
+  }
   .login-page {
     display: flex;
     flex-direction: column;
@@ -23,23 +33,33 @@
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 40px 36px;
-    max-width: 380px;
-    width: 100%;
+    padding: 44px 40px 36px;
+    max-width: 360px;
+    width: 90%;
     box-shadow: var(--shadow-lg);
     text-align: center;
   }
+  .login-mascot {
+    margin-bottom: 16px;
+    line-height: 0;
+  }
   .login-logo {
-    font-family: 'Bagel Fat One', cursive;
-    font-size: 36px;
+    font-family: 'Archivo Black', 'Impact', 'Arial Black', sans-serif;
+    font-size: 38px;
+    color: var(--text);
+    letter-spacing: -1px;
+    margin-bottom: 2px;
+  }
+  .login-logo-ape {
     color: var(--accent-red);
-    margin-bottom: 4px;
+    font-size: 42px;
   }
   .login-tagline {
-    font-size: 12px;
+    font-family: 'Source Serif 4', serif;
+    font-size: 13px;
+    font-style: italic;
     color: var(--text-muted);
     margin-bottom: 32px;
-    font-style: italic;
   }
   .login-label {
     display: block;
@@ -48,13 +68,15 @@
     font-weight: 600;
     color: var(--text-secondary);
     margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
   .login-input {
     width: 100%;
-    padding: 10px 14px;
+    padding: 11px 14px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    font-size: 14px;
+    font-size: 15px;
     font-family: 'Inter', sans-serif;
     background: var(--bg-secondary);
     color: var(--text);
@@ -62,10 +84,10 @@
     box-sizing: border-box;
     transition: border-color 0.2s;
   }
-  .login-input:focus { border-color: var(--accent-red); }
+  .login-input:focus { border-color: var(--accent-red); outline: none; box-shadow: 0 0 0 2px rgba(229,46,10,0.12); }
   .login-btn {
     width: 100%;
-    padding: 11px;
+    padding: 12px;
     margin-top: 16px;
     border: none;
     border-radius: 6px;
@@ -75,15 +97,17 @@
     font-weight: 600;
     font-family: 'Inter', sans-serif;
     cursor: pointer;
-    transition: opacity 0.2s;
+    transition: opacity 0.2s, transform 0.1s;
   }
   .login-btn:hover { opacity: 0.9; }
-  .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .login-btn:active { transform: scale(0.98); }
+  .login-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   .login-message {
     margin-top: 16px;
     font-size: 13px;
     color: var(--text-secondary);
     min-height: 20px;
+    line-height: 1.4;
   }
   .login-message.error { color: var(--accent-red); }
   .login-message.success { color: var(--accent-green); }
@@ -112,10 +136,26 @@
     align-items: center;
     justify-content: center;
     min-height: 100vh;
+    background: var(--bg);
     font-family: 'Inter', sans-serif;
     color: var(--text-muted);
     font-size: 14px;
   }
+  .loading-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .loading-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent-red);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body data-theme="light">
@@ -123,7 +163,28 @@
 <!-- ─── LOGIN PAGE ─── -->
 <div id="loginPage" class="login-page" style="display:none;">
   <div class="login-card">
-    <div class="login-logo">TinyApe</div>
+    <div class="login-mascot">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 130" width="72" height="94">
+        <ellipse cx="50" cy="85" rx="22" ry="28" fill="var(--login-mascot-body)" stroke="var(--login-mascot-stroke)" stroke-width="3.5" stroke-linecap="round"/>
+        <circle cx="50" cy="38" r="24" fill="var(--login-mascot-body)" stroke="var(--login-mascot-stroke)" stroke-width="3.5"/>
+        <circle cx="28" cy="26" r="10" fill="var(--login-mascot-body)" stroke="var(--login-mascot-stroke)" stroke-width="3.5"/>
+        <circle cx="28" cy="26" r="5" fill="var(--accent-red)"/>
+        <circle cx="72" cy="26" r="10" fill="var(--login-mascot-body)" stroke="var(--login-mascot-stroke)" stroke-width="3.5"/>
+        <circle cx="72" cy="26" r="5" fill="var(--accent-red)"/>
+        <circle cx="41" cy="35" r="3.5" fill="var(--login-mascot-stroke)"/>
+        <circle cx="59" cy="35" r="3.5" fill="var(--login-mascot-stroke)"/>
+        <ellipse cx="50" cy="47" rx="10" ry="7" fill="var(--login-mascot-snout)" stroke="var(--login-mascot-stroke)" stroke-width="2.5"/>
+        <circle cx="47" cy="45" r="1.5" fill="var(--login-mascot-stroke)"/>
+        <circle cx="53" cy="45" r="1.5" fill="var(--login-mascot-stroke)"/>
+        <path d="M44 49 Q50 53 56 49" fill="none" stroke="var(--login-mascot-stroke)" stroke-width="2" stroke-linecap="round"/>
+        <path d="M28 75 Q15 80 12 95" fill="none" stroke="var(--login-mascot-stroke)" stroke-width="3.5" stroke-linecap="round"/>
+        <path d="M72 75 Q85 80 88 95" fill="none" stroke="var(--login-mascot-stroke)" stroke-width="3.5" stroke-linecap="round"/>
+        <ellipse cx="38" cy="114" rx="12" ry="6" fill="var(--login-mascot-body)" stroke="var(--login-mascot-stroke)" stroke-width="3.5"/>
+        <ellipse cx="62" cy="114" rx="12" ry="6" fill="var(--login-mascot-body)" stroke="var(--login-mascot-stroke)" stroke-width="3.5"/>
+        <path d="M72 90 Q95 85 98 65 Q100 55 92 50" fill="none" stroke="var(--login-mascot-stroke)" stroke-width="3.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="login-logo">Tiny<span class="login-logo-ape">Ape</span></div>
     <div class="login-tagline">Swing Through the Day</div>
     <label class="login-label" for="loginEmail">Email</label>
     <input type="email" class="login-input" id="loginEmail" placeholder="you@example.com" autocomplete="email">
@@ -134,7 +195,10 @@
 
 <!-- ─── LOADING STATE ─── -->
 <div id="loadingPage" class="app-loading">
-  Loading your tasks...
+  <div class="loading-content">
+    <div class="loading-spinner"></div>
+    <div>Loading your tasks...</div>
+  </div>
 </div>
 
 <!-- ─── MAIN APP (hidden until authenticated) ─── -->
