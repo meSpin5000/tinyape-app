@@ -57,7 +57,7 @@
       <div class="daily-counter" id="dailyCounter">0</div>
       <div>
         <h2 class="section-title">Today</h2>
-        <span class="daily-counter-label">completed today</span>
+        <span class="daily-counter-label">crushed today</span>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
@@ -97,37 +97,46 @@
   </div>
 
   <!-- PROJECTS -->
-  <div id="projectsSection">
-    <div class="section-header" style="margin-top:28px;">
-      <h2 class="section-title">Projects</h2>
-      <div style="display:flex;align-items:center;gap:8px;">
+  <div id="projectsSection" class="collapsible-section" data-section="projects">
+    <div class="section-header section-header-collapsible" onclick="toggleSectionCollapse('projects')">
+      <h2 class="section-title"><span class="section-chevron">›</span> Projects</h2>
+      <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation()">
         <button class="section-add-btn" onclick="openAddModal('project')" title="Add project">+ Add</button>
       </div>
     </div>
-    <div id="projectsList"></div>
-    <div id="projectsEmpty" class="section-empty-hint">
-      Turn any task into a project to track progress and time
+    <div class="section-content" id="projectsContent">
+      <div id="projectsList"></div>
+      <div id="projectsEmpty" class="section-empty-hint">
+        Turn any task into a project to track progress and time
+      </div>
     </div>
   </div>
 
   <!-- ON DECK -->
-  <div class="section-header">
-    <h2 class="section-title">On Deck <span style="font-size:10px; color:var(--text-muted); font-weight:400; font-style:italic; font-family:Inter,sans-serif; margin-left:4px; vertical-align:baseline;">[click to vote up]</span></h2>
-    <div style="display:flex;align-items:center;gap:8px;">
-      <button class="section-add-btn" onclick="openAddModal('ondeck')" title="Add task">+ Add</button>
+  <div id="onDeckSection" class="collapsible-section" data-section="onDeck">
+    <div class="section-header section-header-collapsible" onclick="toggleSectionCollapse('onDeck')">
+      <h2 class="section-title"><span class="section-chevron">›</span> On Deck <span style="font-size:10px; color:var(--text-muted); font-weight:400; font-style:italic; font-family:Inter,sans-serif; margin-left:4px; vertical-align:baseline;">[click to vote up]</span></h2>
+      <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation()">
+        <button class="section-add-btn" onclick="openAddModal('ondeck')" title="Add task">+ Add</button>
+      </div>
+    </div>
+    <div class="section-content" id="onDeckContent">
+      <div class="backlog-list" id="backlogList"></div>
     </div>
   </div>
-  <div class="backlog-list" id="backlogList"></div>
 
-  <!-- DRAWER (inline section for mobile) -->
-  <div class="mobile-drawer-section" id="mobileDrawerSection">
-    <div class="section-header">
-      <h2 class="section-title">Drawer <span class="mobile-drawer-count" id="mobileDrawerCount"></span></h2>
-      <div style="display:flex;align-items:center;gap:8px;">
+  <!-- DRAWER (inline section for all breakpoints) -->
+  <div id="drawerSection" class="collapsible-section" data-section="drawer">
+    <div class="section-header section-header-collapsible" onclick="toggleSectionCollapse('drawer')">
+      <h2 class="section-title"><span class="section-chevron">›</span> Drawer <span class="drawer-count" id="drawerCount"></span></h2>
+      <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation()">
         <button class="section-add-btn" onclick="openAddModal('drawer')" title="Add to drawer">+ Add</button>
       </div>
     </div>
-    <div id="mobileDrawerList"></div>
+    <div class="section-content" id="drawerSectionContent">
+      <div class="drawer-cat-pills" id="drawerCatPills"></div>
+      <div id="drawerContent"></div>
+    </div>
   </div>
 
   <!-- PROJECTS (hidden, data layer preserved) -->
@@ -146,7 +155,7 @@
   <!-- Footer pills for Completed & Killed -->
   <div class="archive-footer" id="archiveFooter">
     <button class="archive-pill" id="completedPill" onclick="openArchivePopup('completed')" style="display:none;">
-      <span class="archive-pill-icon">✓</span> Completed <span class="archive-pill-count" id="completedPillCount"></span>
+      <span class="archive-pill-icon">✓</span> Crushed <span class="archive-pill-count" id="completedPillCount"></span>
     </button>
     <button class="archive-pill killed" id="killedPill" onclick="openArchivePopup('killed')" style="display:none;">
       <span class="archive-pill-icon">✕</span> Killed <span class="archive-pill-count" id="killedPillCount"></span>
@@ -176,33 +185,7 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- DRAWER -->
-<div class="drawer-tab" id="drawerTab" onclick="toggleDrawer()">
-  <span style="display:flex;align-items:center;gap:4px;">Drawer</span>
-  <span class="drawer-tab-badge" id="drawerBadge"></span>
-</div>
-<div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer()"></div>
-<div class="drawer-panel" id="drawerPanel">
-  <div class="drawer-header">
-    <h2 class="section-title">Drawer</h2>
-    <button class="drawer-close" onclick="toggleDrawer()">✕</button>
-  </div>
-  <div style="margin-bottom:14px;">
-    <div style="display:flex;gap:6px;">
-      <input type="text" id="drawerAddInput" placeholder="Add to drawer…" style="flex:1;padding:7px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);font-size:13px;font-family:Inter,sans-serif;color:var(--text);outline:none;" />
-      <button onclick="addTaskFromDrawer()" style="padding:5px 12px;border-radius:4px;border:1px solid var(--border);background:var(--accent-red);color:#fff;font-size:12px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;">Add</button>
-    </div>
-    <div id="drawerAddNotesWrap" style="max-height:0;overflow:hidden;transition:max-height 0.3s ease,padding 0.3s ease;padding-top:0;">
-      <textarea id="drawerAddNotes" placeholder="Add notes…" style="width:100%;margin-top:8px;padding:7px 10px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);font-size:12px;font-family:Inter,sans-serif;color:var(--text);outline:none;resize:none;height:50px;"></textarea>
-      <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
-        <button class="drawer-cat-pill" id="drawerAddListBtn" onclick="toggleDrawerAddList()" style="font-size:10px;padding:2px 8px;">☐ List</button>
-        <button class="drawer-cat-pill" id="drawerAddCatBtn" onclick="cycleDrawerAddCategory()" style="font-size:10px;padding:2px 8px;">+ category</button>
-      </div>
-    </div>
-  </div>
-  <div class="drawer-cat-pills" id="drawerCatPills"></div>
-  <div id="drawerContent"></div>
-</div>
+<!-- Old slide-out drawer removed — now inline in drawerSection above -->
 <div class="unlock-banner" id="unlockBanner"><span class="bolt">&#9889;</span> <span id="unlockText"></span></div>
 <div class="creature-tooltip" id="creatureTooltip"></div>
 
@@ -230,6 +213,7 @@ window._isSafeToSync = function() { return true; };
   const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
   const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0];
+  const farOut = new Date(Date.now() + 60 * 86400000).toISOString().split('T')[0];
 
   // Today tasks
   store.tasks.push(
@@ -258,7 +242,8 @@ window._isSafeToSync = function() { return true; };
     { id: 'p31', title: 'Order new office supplies', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '[ ] Printer paper\n[ ] Sticky notes\n[ ] Pens', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
     { id: 'p32', title: 'Review insurance renewal', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
     { id: 'p33', title: 'Follow up with vendor on pricing', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: 'weekly', recurDays: null, dueDate: tomorrow, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p34', title: 'Plan team offsite agenda', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: null, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] }
+    { id: 'p34', title: 'Plan team offsite agenda', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: null, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p35', title: 'Renew business license', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: farOut, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] }
   );
 
   // Drawer tasks

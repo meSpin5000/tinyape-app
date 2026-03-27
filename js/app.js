@@ -118,8 +118,7 @@ const api = {
     task.drawer = true;
     task.today = false;
     task.todayOrder = null;
-    // Strip date — it's "someday" now (recurring tasks keep their schedule)
-    if (!task.recurring) task.dueDate = null;
+    // Keep the date — user can clear it manually if they want "someday"
     this._reorderToday();
     return task;
   },
@@ -130,18 +129,8 @@ const api = {
     return task;
   },
   surfaceDrawerTasks() {
-    const now = new Date(); now.setHours(0,0,0,0);
-    const surfaced = [];
-    store.tasks.forEach(t => {
-      if (!t.drawer || t.done || t.today || !t.dueDate) return;
-      const due = new Date(t.dueDate + 'T00:00:00');
-      const days = Math.round((due - now) / (1000*60*60*24));
-      if (days <= 30) {
-        t.drawer = false;
-        surfaced.push(t);
-      }
-    });
-    return surfaced;
+    // No-op — auto-surfacing removed. User controls all section placement.
+    return [];
   },
   setTaskDrawerCategory(id, catKey) {
     const task = store.tasks.find(t => t.id === id);
@@ -320,6 +309,7 @@ const checkboxIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="n
 const projectIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><polyline points="8,4 8,8 11,9.5"/></svg>`;
 const sunIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1.5" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="14.5" y2="8"/><line x1="3.4" y1="3.4" x2="4.5" y2="4.5"/><line x1="11.5" y1="11.5" x2="12.6" y2="12.6"/><line x1="3.4" y1="12.6" x2="4.5" y2="11.5"/><line x1="11.5" y1="4.5" x2="12.6" y2="3.4"/></svg>`;
 const onDeckIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="2" x2="8" y2="11"/><polyline points="4,8 8,12 12,8"/></svg>`;
+const categoryIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5A1.5 1.5 0 013.5 2H7l1.5 2H12.5A1.5 1.5 0 0114 5.5v7a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 12.5z"/></svg>`;
 
 
 const celebrationMessages = [
@@ -356,7 +346,7 @@ function formatDueDate(dateStr) {
   const dateText = fmtDate(d);
 
   if (diff < 0) return { text: dateText, cls: 'overdue' };
-  if (diff === 0) return { text: dateText, cls: 'due-today' };
+  if (diff === 0) return { text: dateText, cls: '' };  // today = normal, not red
   return { text: dateText, cls: '' };
 }
 
@@ -367,11 +357,6 @@ function formatRecurring(task) {
 }
 
 function render() {
-  // Auto-surface drawer tasks that are now within 30 days
-  const surfaced = api.surfaceDrawerTasks();
-  if (surfaced.length) {
-    surfaced.forEach(t => showToast(`"${t.title}" surfaced from Drawer`));
-  }
   renderToday();
   renderAddTaskOptions();
   renderProjectsList();
@@ -380,6 +365,7 @@ function render() {
   renderKilled();
   renderDrawer();
   updateCounts();
+  applyAllSectionCollapses();
   if (window.innerWidth <= 640) initSwipeToDelete();
 }
 
@@ -396,7 +382,7 @@ function initSwipeToDelete() {
     if (!taskId) return;
 
     // Determine context
-    const isDrawerTask = !!row.closest('#mobileDrawerList');
+    const isDrawerTask = !!row.closest('#drawerContent');
     const isTodayTask = !!row.closest('#todayList');
 
     // Wrap in swipe container
@@ -546,10 +532,10 @@ function openArchivePopup(type) {
   const list = document.getElementById('archivePopupList');
 
   if (type === 'completed') {
-    title.textContent = 'Completed';
+    title.textContent = 'Crushed';
     const done = api.getDoneTasks();
     if (done.length === 0) {
-      list.innerHTML = '<div class="archive-popup-empty">No completed tasks yet.</div>';
+      list.innerHTML = '<div class="archive-popup-empty">No crushed tasks yet.</div>';
     } else {
       const sorted = [...done].sort((a, b) => {
         const aDate = a.completedAt || '';
@@ -647,35 +633,64 @@ function renderProjectsList() {
   }).join('');
 }
 
+function renderBacklogItem(t) {
+  const recurLabel = formatRecurring(t);
+  const recurInline = recurLabel
+    ? `<span class="recur-inline-icon" onclick="event.stopPropagation(); openScheduleWithRepeat(${qid(t.id)}, this)" title="${recurLabel}">↻</span>`
+    : '';
+
+  const due = formatDueDate(t.dueDate);
+  const dateBtn = due
+    ? `<span class="task-due task-due-clickable ${due.cls}" onclick="openSchedulePopover(${qid(t.id)}, this)" title="Change date">${due.text}</span>`
+    : `<span class="task-due task-due-clickable" onclick="openSchedulePopover(${qid(t.id)}, this)" title="Set date" style="opacity:0.4;font-size:11px;">+ date</span>`;
+
+  return `
+    <div class="backlog-item" data-id="${t.id}">
+      <button class="vote-btn" onclick="handleVoteUp(${qid(t.id)})" title="Add to today">
+        ${plusSvg}
+      </button>
+      <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</span>
+      ${dateBtn}
+      <div class="backlog-actions">
+        <button class="remove-btn drawer-move-btn" onclick="handleMoveToDrawer(${qid(t.id)})" title="Move to Drawer">${drawerIconSvg}</button>
+        <button class="remove-btn" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
+      </div>
+    </div>`;
+}
+
 function renderBacklog() {
   const el = document.getElementById('backlogList');
   const tasks = api.getBacklogTasks();
 
-  el.innerHTML = tasks.map(t => {
-    const recurLabel = formatRecurring(t);
-    const recurInline = recurLabel
-      ? `<span class="recur-inline-icon" onclick="event.stopPropagation(); openScheduleWithRepeat(${qid(t.id)}, this)" title="${recurLabel}">↻</span>`
-      : '';
+  const now = new Date(); now.setHours(0,0,0,0);
+  let olderCount = 0;
 
-    const due = formatDueDate(t.dueDate);
-    // Date IS the button — click to open schedule
-    const dateBtn = due
-      ? `<span class="task-due task-due-clickable ${due.cls}" onclick="openSchedulePopover(${qid(t.id)}, this)" title="Change date">${due.text}</span>`
-      : `<span class="task-due task-due-clickable" onclick="openSchedulePopover(${qid(t.id)}, this)" title="Set date" style="opacity:0.4;font-size:11px;">+ date</span>`;
+  // Render all items, marking 30+ day items with data-older
+  let html = '';
+  tasks.forEach(t => {
+    let isOlder = false;
+    if (t.dueDate) {
+      const due = new Date(t.dueDate + 'T00:00:00');
+      const days = Math.round((due - now) / (1000*60*60*24));
+      if (days > 30) { isOlder = true; olderCount++; }
+    }
+    const item = renderBacklogItem(t);
+    if (isOlder) {
+      // Inject data-older attribute into the backlog-item div
+      html += item.replace('<div class="backlog-item"', '<div class="backlog-item" data-older="true"');
+    } else {
+      html += item;
+    }
+  });
 
-    return `
-      <div class="backlog-item" data-id="${t.id}">
-        <button class="vote-btn" onclick="handleVoteUp(${qid(t.id)})" title="Add to today">
-          ${plusSvg}
-        </button>
-        <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</span>
-        ${dateBtn}
-        <div class="backlog-actions">
-          <button class="remove-btn drawer-move-btn" onclick="handleMoveToDrawer(${qid(t.id)})" title="Move to Drawer">${drawerIconSvg}</button>
-          <button class="remove-btn" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
-        </div>
-      </div>`;
-  }).join('');
+  // Add toggle link if there are 30+ day items
+  if (olderCount > 0) {
+    const label = _olderHidden ? `Show 30+ days (${olderCount})` : `Hide 30+ days`;
+    html += `<div class="older-toggle" onclick="toggleOlderItems()">${label}</div>`;
+  }
+
+  el.innerHTML = html;
+  applyOlderVisibility();
 }
 
 function renderProjects() {
@@ -766,21 +781,62 @@ function renderAddTaskOptions() {
 }
 
 function updateCounts() {
-  const done = api.getDoneTasks();
-
-  // Update daily counter
+  // Counter = completed tasks + today's sub-item/project checklist completions from completionLog
+  const doneTasks = api.getDoneTasks().length;
+  // Count today's completion events from log (includes sub-item checks)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const logToday = completionLog.filter(e => e.ts && e.ts.startsWith(todayStr)).length;
+  // Use whichever is higher — log is the source of truth when sub-items are checked
+  const total = Math.max(doneTasks, logToday);
   const counter = document.getElementById('dailyCounter');
-  if (counter) counter.textContent = done.length;
+  if (counter) counter.textContent = total;
 }
 
 function bumpCounter() {
   if (typeof logCompletion === 'function') logCompletion();
+  // Update the counter number (logCompletion just pushed to completionLog)
+  updateCounts();
   const counter = document.getElementById('dailyCounter');
   if (!counter) return;
   counter.classList.remove('bump');
   // Force reflow to restart animation
   void counter.offsetWidth;
   counter.classList.add('bump');
+}
+
+// ─── MINI REWARD (sub-task / time log) ───
+// Confetti burst near counter + ape jump — lighter than a full creature spawn
+function miniReward() {
+  bumpCounter();
+  // Ape jump celebration
+  try {
+    if (typeof apeJump === 'function') apeJump();
+  } catch(e) {}
+  // Confetti burst near the daily counter
+  try { spawnConfetti(); } catch(e) {}
+}
+
+function spawnConfetti() {
+  const counter = document.getElementById('dailyCounter');
+  if (!counter) return;
+  const rect = counter.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const colors = ['#e52e0a', '#f04a28', '#2456a4', '#5b8fd9', '#2a7d4f', '#d4a843', '#f5f0e6'];
+  for (let i = 0; i < 12; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'confetti-dot';
+    dot.style.left = cx + 'px';
+    dot.style.top = cy + 'px';
+    dot.style.backgroundColor = colors[i % colors.length];
+    // Random direction
+    const angle = (Math.PI * 2 * i) / 12 + (Math.random() - 0.5) * 0.5;
+    const dist = 30 + Math.random() * 40;
+    dot.style.setProperty('--tx', Math.cos(angle) * dist + 'px');
+    dot.style.setProperty('--ty', Math.sin(angle) * dist - 20 + 'px');
+    document.body.appendChild(dot);
+    setTimeout(() => dot.remove(), 700);
+  }
 }
 
 // ─── EVENT HANDLERS ───
@@ -1388,7 +1444,7 @@ function addModalSubmit(destination) {
 
   const label = task.isProject ? 'Project' : 'Task';
   if (destination === 'today') showToast(`${label} added to Today`);
-  else if (isDrawer) { showToast(`${label} added to Drawer`); if (!store.drawerOpen && window.innerWidth > 640) toggleDrawer(); }
+  else if (isDrawer) { showToast(`${label} added to Drawer`); }
   else showToast(`${label} added to On Deck`);
 }
 
@@ -1503,10 +1559,14 @@ function addTaskToToday() {
 // ─── PUSH POPOVER ───
 // ─── JUNK DRAWER ───
 function toggleDrawer() {
-  store.drawerOpen = !store.drawerOpen;
-  document.getElementById('drawerPanel').classList.toggle('open', store.drawerOpen);
-  document.getElementById('drawerOverlay').classList.toggle('open', store.drawerOpen);
-  document.getElementById('drawerTab').style.display = store.drawerOpen ? 'none' : '';
+  // Drawer is now inline — make sure it's uncollapsed and scroll to it
+  if (_sectionCollapsed.drawer) {
+    _sectionCollapsed.drawer = false;
+    applySectionCollapse('drawer');
+    try { localStorage.setItem('tinyape-collapsed', JSON.stringify(_sectionCollapsed)); } catch(e) {}
+  }
+  const section = document.getElementById('drawerSection');
+  if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function addTaskToDrawer() {
@@ -1521,7 +1581,6 @@ function addTaskToDrawer() {
   store.selectedDueDate = null;
   render();
   showToast('Added to Drawer');
-  if (!store.drawerOpen) toggleDrawer();
 }
 
 let drawerAddSelectedCat = null;
@@ -1598,7 +1657,8 @@ function toggleDrawerAddList() {
   }
 }
 
-document.getElementById('drawerAddNotes').addEventListener('keydown', (e) => {
+const _drawerAddNotesEl = document.getElementById('drawerAddNotes');
+if (_drawerAddNotesEl) _drawerAddNotesEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && drawerListMode) {
     e.preventDefault();
     const ta = e.target;
@@ -1619,22 +1679,23 @@ document.getElementById('drawerAddNotes').addEventListener('keydown', (e) => {
   }
 });
 
-// Accordion notes on drawer input
-document.getElementById('drawerAddInput').addEventListener('input', (e) => {
-  const wrap = document.getElementById('drawerAddNotesWrap');
-  if (e.target.value.trim().length > 0) {
-    wrap.style.maxHeight = '140px';
-    wrap.style.paddingTop = '0';
-  } else {
-    wrap.style.maxHeight = '0';
-    wrap.style.paddingTop = '0';
-  }
-});
-
-// Enter to add from drawer input
-document.getElementById('drawerAddInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') addTaskFromDrawer();
-});
+// Drawer input listeners (old slide-out panel — kept for safety, no-ops if element missing)
+if (document.getElementById('drawerAddInput')) {
+  document.getElementById('drawerAddInput').addEventListener('input', (e) => {
+    const wrap = document.getElementById('drawerAddNotesWrap');
+    if (!wrap) return;
+    if (e.target.value.trim().length > 0) {
+      wrap.style.maxHeight = '140px';
+      wrap.style.paddingTop = '0';
+    } else {
+      wrap.style.maxHeight = '0';
+      wrap.style.paddingTop = '0';
+    }
+  });
+  document.getElementById('drawerAddInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') addTaskFromDrawer();
+  });
+}
 
 function handleMoveToDrawerFromToday(id) {
   const task = window._findTaskById ? window._findTaskById(id) : store.tasks.find(t => t.id === id);
@@ -1645,16 +1706,20 @@ function handleMoveToDrawerFromToday(id) {
 }
 
 function handleMoveToDrawer(id) {
-  const row = document.querySelector(`.backlog-item[data-id="${id}"]`);
+  // Resolve ID — may have changed from integer to UUID after sync
+  const task = window._findTaskById ? window._findTaskById(id) : store.tasks.find(t => t.id === id);
+  const currentId = task ? task.id : id;
+  const row = document.querySelector(`.backlog-item[data-id="${currentId}"]`)
+    || document.querySelector(`.backlog-item[data-id="${id}"]`);
   if (row) {
     row.classList.add('slide-to-drawer');
     setTimeout(() => {
-      api.moveToDrawer(id);
+      api.moveToDrawer(currentId);
       render();
       showToast('Moved to Drawer');
     }, 350);
   } else {
-    api.moveToDrawer(id);
+    api.moveToDrawer(currentId);
     render();
     showToast('Moved to Drawer');
   }
@@ -1811,13 +1876,13 @@ function renderDrawer() {
   const allDrawer = api.getDrawerTasks();
   const cats = store.drawerCategories;
 
-  // Update badge
-  const badge = document.getElementById('drawerBadge');
-  badge.textContent = allDrawer.length || '';
-  badge.setAttribute('data-count', allDrawer.length);
+  // Update count in section header
+  const countEl = document.getElementById('drawerCount');
+  if (countEl) countEl.textContent = allDrawer.length ? `(${allDrawer.length})` : '';
 
   // Category list — simple inline text with dots
   const pillsEl = document.getElementById('drawerCatPills');
+  if (!pillsEl) return;
   let pillsHtml = '';
   const catEntries = Object.entries(cats);
   if (catEntries.length) {
@@ -1860,15 +1925,17 @@ function renderDrawer() {
   const renderTaskItem = (t) => {
     const due = t.dueDate ? formatDueDate(t.dueDate) : null;
     const recurIcon = t.recurring ? '<span style="color:var(--accent-blue);margin-left:2px;">↻</span>' : '';
-    const dateMeta = due ? `<span class="drawer-item-meta ${due.cls}">${due.text}</span>` : '';
+    const dateMeta = due ? `<span class="task-due ${due.cls}">${due.text}</span>` : '';
     const notesIcon = t.notes ? '<span class="notes-indicator">📄</span>' : '';
 
-    return `<div class="drawer-item" data-id="${t.id}">
-      <span class="drawer-item-title" onclick="openNotesSidebar(${qid(t.id)})" title="Click to open">${t.title}${notesIcon}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurIcon}</span>
+    return `<div class="backlog-item drawer-item" data-id="${t.id}">
+      <button class="vote-btn" onclick="handleDrawerMoveToOnDeck(${qid(t.id)})" title="Move to On Deck">
+        ${plusSvg}
+      </button>
+      <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${notesIcon}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurIcon}</span>
       ${dateMeta}
-      <div class="drawer-item-actions">
-        <button class="drawer-up-btn" onclick="handleDrawerMoveToOnDeck(${qid(t.id)})" title="Move to On Deck"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="13" x2="8" y2="3"/><polyline points="3,7 8,2 13,7"/></svg></button>
-        <button onclick="handleDrawerTrash(${qid(t.id)})" title="Delete">✕</button>
+      <div class="backlog-actions">
+        <button class="remove-btn" onclick="handleDrawerTrash(${qid(t.id)})" title="Delete">✕</button>
       </div>
     </div>`;
   };
@@ -1907,81 +1974,6 @@ function renderDrawer() {
   }
 
   el.innerHTML = html;
-
-  // Also render mobile inline drawer
-  renderMobileDrawer();
-}
-
-function renderMobileDrawer() {
-  const listEl = document.getElementById('mobileDrawerList');
-  const countEl = document.getElementById('mobileDrawerCount');
-  if (!listEl) return;
-
-  const allDrawer = api.getDrawerTasks();
-  const cats = store.drawerCategories;
-
-  // Update count
-  if (countEl) countEl.textContent = allDrawer.length ? `(${allDrawer.length})` : '';
-
-  if (allDrawer.length === 0) {
-    listEl.innerHTML = '<div class="section-empty-hint">Drawer is empty — toss tasks here for later</div>';
-    return;
-  }
-
-  // Group by category
-  const groups = {};
-  Object.keys(cats).forEach(key => { groups[key] = []; });
-  groups.someday = [];
-  allDrawer.forEach(t => {
-    const catKey = t.drawerCategory && cats[t.drawerCategory] ? t.drawerCategory : 'someday';
-    if (!groups[catKey]) groups[catKey] = [];
-    groups[catKey].push(t);
-  });
-  Object.values(groups).forEach(arr => {
-    arr.sort((a, b) => {
-      if (a.dueDate && !b.dueDate) return -1;
-      if (!a.dueDate && b.dueDate) return 1;
-      if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
-      return 0;
-    });
-  });
-
-  let html = '';
-  const catKeys = Object.keys(cats);
-  const allGroupKeys = [...catKeys, 'someday'];
-
-  allGroupKeys.forEach(key => {
-    const tasks = groups[key] || [];
-    if (!tasks.length) return;
-
-    const label = key === 'someday' ? 'SOMEDAY' : cats[key].label.toUpperCase();
-    const color = key === 'someday' ? 'var(--text-muted)' : cats[key].color;
-
-    html += `<div class="mobile-drawer-group">
-      <div class="mobile-drawer-group-label" style="color:${color}">${label}</div>`;
-
-    tasks.forEach(t => {
-      const due = t.dueDate ? formatDueDate(t.dueDate) : null;
-      const dateMeta = due ? `<span class="task-due ${due.cls}">${due.text}</span>` : '';
-      const notesIcon = t.notes ? '<span class="notes-indicator">📄</span>' : '';
-      const recurIcon = t.recurring ? '<span class="recur-inline-icon">↻</span>' : '';
-
-      html += `<div class="backlog-item" data-id="${t.id}">
-        <button class="vote-btn" onclick="handleDrawerMoveToOnDeck(${qid(t.id)})" title="Move to On Deck">
-          ${plusSvg}
-        </button>
-        <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${notesIcon}${recurIcon}</span>
-        ${dateMeta}
-        <div class="backlog-actions">
-          <button class="remove-btn" onclick="handleDrawerTrash(${qid(t.id)})" title="Delete">✕</button>
-        </div>
-      </div>`;
-    });
-
-    html += `</div>`;
-  });
-
-  listEl.innerHTML = html;
 }
 
 // Close drawer on Escape
@@ -2548,6 +2540,50 @@ try {
   if (saved) document.body.setAttribute('data-theme', saved);
 } catch(e) {}
 
+// ─── COLLAPSIBLE SECTIONS (persistent) ───
+let _sectionCollapsed = {};
+let _olderHidden = true;
+try {
+  const sc = localStorage.getItem('tinyape-collapsed');
+  if (sc) _sectionCollapsed = JSON.parse(sc);
+  _olderHidden = localStorage.getItem('tinyape-older-hidden') !== 'false';
+} catch(e) {}
+
+function toggleSectionCollapse(key) {
+  _sectionCollapsed[key] = !_sectionCollapsed[key];
+  applySectionCollapse(key);
+  try { localStorage.setItem('tinyape-collapsed', JSON.stringify(_sectionCollapsed)); } catch(e) {}
+}
+
+function applySectionCollapse(key) {
+  const section = document.querySelector(`.collapsible-section[data-section="${key}"]`);
+  if (!section) return;
+  const content = section.querySelector('.section-content');
+  const chevron = section.querySelector('.section-chevron');
+  if (_sectionCollapsed[key]) {
+    if (content) content.style.display = 'none';
+    if (chevron) chevron.classList.add('collapsed');
+  } else {
+    if (content) content.style.display = '';
+    if (chevron) chevron.classList.remove('collapsed');
+  }
+}
+
+function applyAllSectionCollapses() {
+  ['projects', 'onDeck', 'drawer'].forEach(applySectionCollapse);
+}
+
+function toggleOlderItems() {
+  _olderHidden = !_olderHidden;
+  try { localStorage.setItem('tinyape-older-hidden', String(_olderHidden)); } catch(e) {}
+  render();
+}
+
+function applyOlderVisibility() {
+  const items = document.querySelectorAll('#backlogList .backlog-item[data-older="true"]');
+  items.forEach(el => { el.style.display = _olderHidden ? 'none' : ''; });
+}
+
 // Date display
 function setDate() {
   const d = new Date();
@@ -2621,10 +2657,14 @@ function openNotesSidebar(id, anchorEl) {
   const hasTime = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
   pillsHtml += `<span class="notes-card-pill${hasTime ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
 
-  // Contextual 5th pill: "On Deck" for Today tasks, "Drawer" for others
+  // Contextual 5th pill: "On Deck" for Today tasks, "Category" for Drawer tasks, "Drawer" for others
   if (task.today) {
     pillsHtml += `<span class="notes-card-pill" onclick="handleRemoveFromToday(${qid(id)}); closeNotesCard(true);" title="Move to On Deck">${onDeckIconSvg} On Deck</span>`;
-  } else if (!task.drawer) {
+  } else if (task.drawer) {
+    const catLabel = task.drawerCategory && store.drawerCategories[task.drawerCategory]
+      ? store.drawerCategories[task.drawerCategory].label : 'Category';
+    pillsHtml += `<span class="notes-card-pill${task.drawerCategory ? ' active' : ''}" onclick="openCardCategoryPicker(${qid(id)}, this)" title="Set category">${categoryIconSvg} ${catLabel}</span>`;
+  } else {
     pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} Drawer</span>`;
   }
 
@@ -2832,10 +2872,14 @@ function refreshSidebarMeta() {
   const hasTime2 = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
   pillsHtml += `<span class="notes-card-pill${hasTime2 ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
 
-  // Contextual 5th pill: "On Deck" for Today tasks, "Drawer" for others
+  // Contextual 5th pill: "On Deck" for Today tasks, "Category" for Drawer tasks, "Drawer" for others
   if (task.today) {
     pillsHtml += `<span class="notes-card-pill" onclick="handleRemoveFromToday(${qid(id)}); closeNotesCard(true);" title="Move to On Deck">${onDeckIconSvg} On Deck</span>`;
-  } else if (!task.drawer) {
+  } else if (task.drawer) {
+    const catLabel = task.drawerCategory && store.drawerCategories[task.drawerCategory]
+      ? store.drawerCategories[task.drawerCategory].label : 'Category';
+    pillsHtml += `<span class="notes-card-pill${task.drawerCategory ? ' active' : ''}" onclick="openCardCategoryPicker(${qid(id)}, this)" title="Set category">${categoryIconSvg} ${catLabel}</span>`;
+  } else {
     pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} Drawer</span>`;
   }
 
@@ -2865,11 +2909,11 @@ function openCardCategoryPicker(taskId, pillEl) {
   keys.forEach(key => {
     const cat = cats[key];
     const isActive = task && task.drawerCategory === key;
-    popHtml += `<button onclick="event.stopPropagation();applyCardCategory(${taskId},'${key}')" style="display:flex;align-items:center;gap:6px;text-align:left;${isActive ? 'font-weight:700;' : ''}">
+    popHtml += `<button onclick="event.stopPropagation();applyCardCategory(${qid(taskId)},'${key}')" style="display:flex;align-items:center;gap:6px;text-align:left;${isActive ? 'font-weight:700;' : ''}">
       <span style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${cat.label}
     </button>`;
   });
-  popHtml += `<button onclick="event.stopPropagation();applyCardCategory(${taskId},null)" style="color:var(--text-muted);font-size:11px;">✕ None</button>`;
+  popHtml += `<button onclick="event.stopPropagation();applyCardCategory(${qid(taskId)},null)" style="color:var(--text-muted);font-size:11px;">✕ None</button>`;
   pop.innerHTML = popHtml;
 
   document.body.appendChild(pop);
@@ -2961,9 +3005,6 @@ function saveTimeSession() {
   closeNotesCard();
   openNotesSidebar(id);
   showToast(`Logged ${formatMinutes(minutes)}`);
-  // Reward: spawn a creature for logging time
-  bumpCounter();
-  spawnCreature();
 }
 
 function deleteTimeSession(taskId, idx) {
@@ -3108,12 +3149,38 @@ function handleInlineCheck(cb) {
   if (cb.closest('#addTaskNotes')) return;
   saveCurrentNotes();
   render();
-  // Reward: spawn a creature when checking off a project sub-item
-  if (wasChecked && currentNotesTaskId) {
+
+  // Project sub-item: update progress bar in notes card + counter/HoF
+  if (currentNotesTaskId) {
     const task = store.tasks.find(t => t.id === currentNotesTaskId);
     if (task && task.isProject) {
-      bumpCounter();
-      spawnCreature();
+      // Update progress bar inside the open notes card
+      const progRow = document.querySelector('.notes-progress-row');
+      if (progRow) {
+        const prog = api.getChecklistProgress(task.id);
+        if (prog.total > 0) {
+          const pct = Math.round((prog.checked / prog.total) * 100);
+          const fill = progRow.querySelector('.notes-progress-fill');
+          const label = progRow.querySelector('.notes-progress-label');
+          if (fill) fill.style.width = pct + '%';
+          if (label) label.textContent = prog.checked + '/' + prog.total;
+        }
+      }
+      if (wasChecked) {
+        // Checked: mini reward (confetti + ape jump + log completion)
+        miniReward();
+      } else {
+        // Unchecked: remove most recent completion event + update counter/HoF
+        if (completionLog.length > 0) completionLog.pop();
+        updateCounts();
+        renderHallOfFame();
+        if (window.TinyApeDB && window.TinyApeDB.deleteLatestCompletionEvent) {
+          if (window._markCompletionWrite) window._markCompletionWrite();
+          window.TinyApeDB.deleteLatestCompletionEvent().catch(err =>
+            console.error('Error removing completion event:', err)
+          );
+        }
+      }
     }
   }
 }
@@ -3465,7 +3532,7 @@ setupDragList('projectsList');
 function saveOrder() {
   const container = document.getElementById(dragListId);
   const items = [...container.querySelectorAll('.today-item, .project-row')];
-  const ids = items.map(el => parseInt(el.dataset.id));
+  const ids = items.map(el => el.dataset.id);
   if (dragListId === 'projectsList') {
     api.reorderProjects(ids);
   } else {

@@ -27,8 +27,8 @@
     --bg-secondary: #2a2a2a;
     --bg-card: #2e2e2e;
     --text: #f5f0e6;
-    --text-secondary: #a89f90;
-    --text-muted: #6b6358;
+    --text-secondary: #b8b0a4;
+    --text-muted: #8a8278;
     --border: #3a3a38;
     --border-light: #323230;
     --accent-red: #f04a28;
@@ -366,11 +366,11 @@
     content: '';
     position: absolute;
     left: 3px;
-    top: 0px;
-    width: 5px;
-    height: 9px;
+    top: 1px;
+    width: 4px;
+    height: 7px;
     border: solid #fff;
-    border-width: 0 2px 2px 0;
+    border-width: 0 1.5px 1.5px 0;
     transform: rotate(45deg);
   }
   .add-modal-notes .notes-line.checked .notes-line-text {
@@ -748,7 +748,7 @@
   .task-content { flex: 1; min-width: 0; }
   .task-title {
     font-size: 15px;
-    font-weight: 500;
+    font-weight: 400;
     transition: color var(--transition);
   }
   .today-item.done .task-title {
@@ -793,22 +793,57 @@
   .swipe-row-wrap:has(.completing-row) .swipe-delete-bg,
   .swipe-row-wrap:has(.completing-row) .swipe-demote-bg { visibility: hidden; }
 
-  /* Mobile inline drawer section — hidden on desktop */
-  .mobile-drawer-section { display: none; }
   .mobile-bottom-spacer { display: none; }
-  .mobile-drawer-count {
+
+  /* ─── COLLAPSIBLE SECTIONS ─── */
+  .collapsible-section {
+    margin-top: 12px;
+  }
+  .section-header-collapsible {
+    cursor: pointer;
+    user-select: none;
+  }
+  .section-header-collapsible:hover .section-chevron {
+    color: var(--accent-red);
+  }
+  .section-chevron {
+    display: inline-block;
+    font-size: 14px;
+    color: var(--text-muted);
+    transition: transform 0.2s ease;
+    transform: rotate(90deg);
+    margin-right: 2px;
+    font-family: Inter, sans-serif;
+    font-weight: 400;
+  }
+  .section-chevron.collapsed {
+    transform: rotate(0deg);
+  }
+
+  /* Drawer count in section header */
+  .drawer-count {
     font-size: 12px;
     color: var(--text-muted);
     font-weight: 400;
     font-family: Inter, sans-serif;
   }
-  .mobile-drawer-group-label {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    padding: 8px 16px 4px;
+
+  /* ─── 30+ DAYS TOGGLE ─── */
+  .older-toggle {
+    text-align: center;
+    padding: 10px 0;
+    font-size: 12px;
+    font-weight: 500;
     font-family: Inter, sans-serif;
+    color: var(--accent-red);
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.15s;
   }
+  .older-toggle:hover {
+    opacity: 0.7;
+  }
+  /* Old mobile-drawer-group-label removed — drawer is now unified inline section */
 
   .remove-btn {
     opacity: 0;
@@ -870,7 +905,7 @@
 
   .backlog-task-title {
     font-size: 15px;
-    font-weight: 500;
+    font-weight: 400;
     flex: 1;
     color: var(--text);
   }
@@ -933,7 +968,7 @@
     padding: 10px 12px;
     font-size: 15px;
     font-family: 'Inter', sans-serif;
-    font-weight: 500;
+    font-weight: 400;
     color: #1a1a1a;
     outline: none;
     transition: box-shadow var(--transition);
@@ -1882,114 +1917,10 @@
     filter: drop-shadow(0 0 4px rgba(255,255,255,0.5));
   }
 
-  /* ─── JUNK DRAWER ─── */
-  .drawer-tab {
-    position: fixed;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    writing-mode: vertical-rl;
-    background: var(--bg-card, var(--bg));
-    border: 1px solid var(--border);
-    border-right: none;
-    border-radius: 8px 0 0 8px;
-    padding: 14px 8px;
-    cursor: pointer;
-    z-index: 101;
-    font-family: 'Source Serif 4', Georgia, serif;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: background 0.2s, color 0.2s;
-    box-shadow: -2px 0 8px rgba(0,0,0,0.06);
-  }
-  .drawer-tab:hover {
-    background: var(--bg-secondary);
-    color: var(--text);
-  }
-  .drawer-tab-badge {
-    writing-mode: horizontal-tb;
-    background: var(--accent-red);
-    color: #fff;
-    font-family: Inter, sans-serif;
-    font-size: 11px;
-    font-weight: 700;
-    min-width: 18px;
-    height: 18px;
-    border-radius: 9px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 5px;
-  }
-  .drawer-tab-badge:empty, .drawer-tab-badge[data-count="0"] {
-    display: none;
-  }
-  .drawer-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.15);
-    z-index: 98;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-  }
-  .drawer-overlay.open {
-    opacity: 1;
-    pointer-events: auto;
-  }
-  .drawer-panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 340px;
-    max-width: 90vw;
-    background: var(--bg);
-    border-left: 1px solid var(--border);
-    z-index: 101;
-    transform: translateX(100%);
-    transition: transform 0.3s ease;
-    overflow-y: auto;
-    padding: 20px;
-    padding-top: 20px;
-    box-shadow: -4px 0 24px rgba(0,0,0,0.1);
-  }
-  .drawer-panel.open {
-    transform: translateX(0);
-  }
-  .drawer-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 20px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid var(--accent-red);
-    position: sticky;
-    top: 0;
-    background: var(--bg);
-    z-index: 1;
-    padding-top: 10px;
-  }
-  .drawer-header .section-title {
-    margin: 0;
-  }
-  .drawer-close {
-    background: none;
-    border: none;
-    font-size: 20px;
-    cursor: pointer;
-    color: var(--text-secondary);
-    padding: 4px 8px;
-    border-radius: 4px;
-  }
-  .drawer-close:hover {
-    background: var(--bg-secondary);
-    color: var(--text);
-  }
+  /* ─── JUNK DRAWER (inline section) ─── */
+  /* Old slide-out panel CSS removed — drawer is now inline */
+  .drawer-tab, .drawer-tab-badge, .drawer-overlay, .drawer-panel, .drawer-header, .drawer-close { display: none; }
+
   .drawer-group {
     margin-bottom: 4px;
   }
@@ -1998,7 +1929,7 @@
     align-items: center;
     justify-content: space-between;
     cursor: pointer;
-    padding: 6px 4px;
+    padding: 6px 16px;
     border-radius: 4px;
     transition: background 0.15s;
   }
@@ -2006,7 +1937,7 @@
     background: var(--bg-secondary);
   }
   .drawer-group-label {
-    font-size: 10px;
+    font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 1px;
     font-weight: 700;
@@ -2016,8 +1947,8 @@
     gap: 6px;
   }
   .drawer-group-label .cat-dot {
-    width: 8px;
-    height: 8px;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
   }
   .drawer-group-count {
@@ -2039,79 +1970,22 @@
   .drawer-group.open .drawer-group-items {
     display: block;
   }
-  .drawer-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 5px;
-    border-radius: 6px;
-    font-size: 12px;
-    transition: background 0.15s;
-  }
-  .drawer-item:hover {
-    background: var(--bg-secondary);
-  }
-  .drawer-item-title {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    cursor: pointer;
-  }
-  .drawer-item-title:hover {
-    color: var(--accent-red);
-  }
-  .drawer-item-meta {
-    font-size: 10px;
-    color: var(--text-muted);
-    white-space: nowrap;
-  }
-  .drawer-item-actions {
-    display: flex;
-    gap: 2px;
-    opacity: 0;
-    transition: opacity 0.15s;
-  }
-  .drawer-item:hover .drawer-item-actions {
-    opacity: 1;
-  }
-  .drawer-item-actions button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 11px;
-    padding: 2px 4px;
-    border-radius: 4px;
-    color: var(--text-secondary);
-  }
-  .drawer-item-actions button:hover {
-    background: var(--bg-secondary);
-    color: var(--text);
-  }
-  .drawer-up-btn svg {
-    width: 13px;
-    height: 13px;
-    display: block;
-  }
-  .drawer-up-btn:hover {
-    color: var(--accent-red) !important;
-  }
+  /* Drawer items now use .backlog-item class — no separate .drawer-item layout needed */
   .drawer-empty {
-    font-size: 12px;
+    font-size: 14px;
     color: var(--text-muted);
     font-style: italic;
-    padding: 8px 0;
+    padding: 12px 0;
   }
   .drawer-cat-pills {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     flex-wrap: wrap;
-    margin-bottom: 10px;
-    padding-bottom: 8px;
+    margin-bottom: 12px;
+    padding: 0 16px 10px;
     border-bottom: 1px solid var(--border);
-    font-size: 10px;
+    font-size: 13px;
     color: var(--text-muted);
   }
   .drawer-cat-item {
@@ -2307,6 +2181,21 @@
     60% { transform: scale(0.95); }
     100% { transform: scale(1); }
   }
+  /* ─── CONFETTI DOTS (mini reward) ─── */
+  .confetti-dot {
+    position: fixed;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9999;
+    animation: confettiBurst 0.6s ease-out forwards;
+  }
+  @keyframes confettiBurst {
+    0% { opacity: 1; transform: translate(0, 0) scale(1); }
+    100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0.3); }
+  }
+
   .daily-counter-label {
     font-size: 11px;
     color: var(--accent-red);
@@ -2961,11 +2850,11 @@
     content: '';
     position: absolute;
     left: 3px;
-    top: 0px;
-    width: 5px;
-    height: 9px;
+    top: 1px;
+    width: 4px;
+    height: 7px;
     border: solid #fff;
-    border-width: 0 2px 2px 0;
+    border-width: 0 1.5px 1.5px 0;
     transform: rotate(45deg);
   }
   .notes-line.checked .notes-line-text {
@@ -3228,7 +3117,7 @@
       font-size: 24px;
     }
     .date-display {
-      font-size: 11px;
+      display: none;
     }
     .theme-toggle {
       width: 28px;
@@ -3311,8 +3200,7 @@
     .drawer-move-btn { display: none; }
     .notes-drawer-pill { display: inline-flex; }
     .copy-btn { display: none; }
-    .drawer-item-actions { opacity: 0.6; }
-    .drawer-item:hover .drawer-item-actions { opacity: 1; }
+    /* Drawer items now use .backlog-actions via .backlog-item */
 
     /* Swipe-to-delete */
     .swipe-row-wrap {
@@ -3597,10 +3485,7 @@
     }
 
     /* Drawer — hide slide-out on mobile, show inline section */
-    .drawer-tab { display: none !important; }
-    .drawer-panel { display: none !important; }
-    .drawer-overlay { display: none !important; }
-    .mobile-drawer-section { display: block; }
+    /* Old slide-out drawer removed — now inline in all breakpoints */
     .mobile-bottom-spacer { display: block; height: 80px; }
 
     /* Archive popup mobile */
