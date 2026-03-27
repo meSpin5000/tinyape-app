@@ -106,7 +106,7 @@
   };
 
   window._isCompletionEcho = function() {
-    return (Date.now() - _lastCompletionWrite < 8000);
+    return (Date.now() - _lastCompletionWrite < 15000);
   };
 
   // Allow app.js (handleUncomplete) to mark a completion write
@@ -115,7 +115,7 @@
   };
 
   window._isCategoryEcho = function() {
-    return (Date.now() - _lastCategoryWrite < 8000);
+    return (Date.now() - _lastCategoryWrite < 15000);
   };
 
   window._getUnsavedTaskIds = function() {
@@ -239,6 +239,17 @@
     api.moveFromDrawer = function(id) {
       const task = _origMoveFromDrawer(id);
       persistTask(task);
+      return task;
+    };
+
+    // ─── Patch restoreTask ───
+    const _origRestoreTask = api.restoreTask.bind(api);
+    api.restoreTask = function(killedIndex) {
+      const task = _origRestoreTask(killedIndex);
+      if (task) {
+        _markWritten(task.id);
+        persistTask(task);
+      }
       return task;
     };
 

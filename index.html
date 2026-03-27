@@ -414,7 +414,7 @@ async function loadAndShowApp() {
 // Returns true if data changed (callers should re-render).
 function _storeFingerprint() {
   const taskPart = store.tasks.map(t =>
-    `${t.id}|${t.title}|${t.today}|${t.todayOrder}|${t.done}|${t.dueDate}|${t.drawer}|${t.notes}|${t.isProject}|${t.trackTime}|${t.killed}`
+    `${t.id}|${t.title}|${t.today}|${t.todayOrder}|${t.done}|${t.dueDate}|${t.drawer}|${t.notes}|${t.isProject}|${t.trackTime}|${t.killed}|${t.completedAt}|${t.recurring}|${t.recurDays}|${t.drawerCategory}|${(t.timeSessions||[]).length}`
   ).join(';');
   const killedPart = store.killedTasks.map(t => `${t.id}|${t.killedAt}`).join(';');
   const logPart = completionLog.length;
@@ -540,8 +540,6 @@ async function refreshFromSupabase(force) {
       if (data.creatureUnlocks && data.creatureUnlocks.length > 0) {
         window._pendingCreatureUnlocks = data.creatureUnlocks;
       }
-
-      api.surfaceDrawerTasks();
 
       const afterFP = _storeFingerprint();
       if (afterFP === beforeFP) {

@@ -128,6 +128,15 @@ const api = {
     task.drawer = false;
     return task;
   },
+  restoreTask(killedIndex) {
+    const killed = store.killedTasks[killedIndex];
+    if (!killed) return null;
+    store.killedTasks.splice(killedIndex, 1);
+    const restored = { ...killed, done: false, today: false, todayOrder: null, killed: false };
+    delete restored.killedAt;
+    store.tasks.push(restored);
+    return restored;
+  },
   surfaceDrawerTasks() {
     // No-op — auto-surfacing removed. User controls all section placement.
     return [];
@@ -2516,13 +2525,8 @@ function handleDeleteTask(id) {
 }
 
 function handleRestoreTask(killedIndex) {
-  const killed = store.killedTasks[killedIndex];
-  if (!killed) return;
-  // Remove from killed, add back to tasks as backlog item
-  store.killedTasks.splice(killedIndex, 1);
-  const restored = { ...killed, done: false, today: false, todayOrder: null };
-  delete restored.killedAt;
-  store.tasks.push(restored);
+  const task = api.restoreTask(killedIndex);
+  if (!task) return;
   render();
   showToast('Task restored');
 }
