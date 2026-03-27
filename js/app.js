@@ -2888,44 +2888,49 @@ function refreshSidebarMeta() {
 }
 
 function openCardCategoryPicker(taskId, pillEl) {
-  closeCatPopover();
+  // Toggle accordion inline inside the notes card
+  const existing = notesCardEl && notesCardEl.querySelector('.card-cat-accordion');
+  if (existing) { existing.remove(); return; }
+  if (!notesCardEl) return;
+
   const cats = store.drawerCategories;
   const keys = Object.keys(cats);
-  if (!keys.length) { showToast('Add categories in the Drawer first'); return; }
-
-  const rect = pillEl.getBoundingClientRect();
-  const pop = document.createElement('div');
-  pop.className = 'push-popover';
-  pop.style.position = 'fixed';
-  pop.style.left = rect.left + 'px';
-  pop.style.top = (rect.bottom + 4) + 'px';
-  pop.style.flexDirection = 'column';
-  pop.style.gap = '2px';
-  pop.style.padding = '6px';
-  pop.style.zIndex = '10000';
-
   const task = store.tasks.find(t => t.id === taskId);
-  let popHtml = '';
+
+  let itemsHtml = '';
   keys.forEach(key => {
     const cat = cats[key];
     const isActive = task && task.drawerCategory === key;
-    popHtml += `<button onclick="event.stopPropagation();applyCardCategory(${qid(taskId)},'${key}')" style="display:flex;align-items:center;gap:6px;text-align:left;${isActive ? 'font-weight:700;' : ''}">
-      <span style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${cat.label}
+    itemsHtml += `<button class="card-cat-item${isActive ? ' active' : ''}" onclick="event.stopPropagation();applyCardCategory(${qid(taskId)},'${key}')">
+      <span class="card-cat-dot" style="background:${cat.color}"></span>
+      <span class="card-cat-label">${escHtml(cat.label)}</span>
+      ${isActive ? '<span class="card-cat-check">✓</span>' : ''}
     </button>`;
   });
-  popHtml += `<button onclick="event.stopPropagation();applyCardCategory(${qid(taskId)},null)" style="color:var(--text-muted);font-size:11px;">✕ None</button>`;
-  pop.innerHTML = popHtml;
+  // "None" option to clear category
+  const noneActive = task && !task.drawerCategory;
+  itemsHtml += `<button class="card-cat-item card-cat-none${noneActive ? ' active' : ''}" onclick="event.stopPropagation();applyCardCategory(${qid(taskId)},null)">
+    <span class="card-cat-dot" style="background:var(--border)"></span>
+    <span class="card-cat-label">None</span>
+    ${noneActive ? '<span class="card-cat-check">✓</span>' : ''}
+  </button>`;
 
-  document.body.appendChild(pop);
-  catPopoverEl = pop;
-  setTimeout(() => document.addEventListener('click', closeCatPopoverOnOutside), 0);
+  const accordion = document.createElement('div');
+  accordion.className = 'card-cat-accordion';
+  accordion.innerHTML = `<div class="card-cat-list">${itemsHtml}</div>`;
+
+  // Insert before the pills row
+  const pillsRow = notesCardEl.querySelector('.notes-card-pills');
+  if (pillsRow) pillsRow.insertAdjacentElement('beforebegin', accordion);
 }
 
 function applyCardCategory(taskId, catKey) {
-  // Remove popover immediately before any re-rendering
-  if (catPopoverEl) { catPopoverEl.remove(); catPopoverEl = null; }
-  document.removeEventListener('click', closeCatPopoverOnOutside);
   api.setTaskDrawerCategory(taskId, catKey);
+  // Remove accordion
+  if (notesCardEl) {
+    const acc = notesCardEl.querySelector('.card-cat-accordion');
+    if (acc) acc.remove();
+  }
   refreshSidebarMeta();
   renderDrawer();
 }
