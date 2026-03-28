@@ -1937,12 +1937,19 @@ function handleDeleteDrawerCategory(key) {
 function handleRenameDrawerCategory(key) {
   const cat = store.drawerCategories[key];
   if (!cat) return;
+
+  // Mobile: open bottom sheet
+  if (window.innerWidth <= 640) {
+    openCategorySheet(key);
+    return;
+  }
+
+  // Desktop: inline edit
   const item = document.querySelector(`.drawer-cat-item[data-cat-key="${key}"]`);
   if (!item) return;
   const labelEl = item.querySelector('.cat-label');
   if (!labelEl) return;
 
-  // Replace label with inline input
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'cat-rename-input';
@@ -1953,11 +1960,8 @@ function handleRenameDrawerCategory(key) {
     const newName = input.value.trim();
     if (newName && newName !== cat.label) {
       api.renameDrawerCategory(key, newName);
-      renderDrawer();
-    } else {
-      // Revert — just re-render
-      renderDrawer();
     }
+    renderDrawer();
   };
 
   input.addEventListener('keydown', (e) => {
@@ -1969,6 +1973,71 @@ function handleRenameDrawerCategory(key) {
   labelEl.replaceWith(input);
   input.focus();
   input.select();
+}
+
+// ─── Mobile Category Bottom Sheet ───
+function openCategorySheet(key) {
+  const cat = store.drawerCategories[key];
+  if (!cat) return;
+
+  // Close any existing sheet
+  closeCategorySheet();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'cat-sheet-overlay';
+  overlay.onclick = closeCategorySheet;
+
+  const sheet = document.createElement('div');
+  sheet.className = 'cat-sheet';
+  sheet.innerHTML = `
+    <div class="cat-sheet-handle"></div>
+    <div class="cat-sheet-header">
+      <span class="cat-dot" style="background:${cat.color};width:10px;height:10px;border-radius:50%;display:inline-block;"></span>
+      <span class="cat-sheet-title">Edit Category</span>
+    </div>
+    <input type="text" class="cat-sheet-input" id="catSheetInput" value="${cat.label.replace(/"/g, '&quot;')}" />
+    <div class="cat-sheet-actions">
+      <button class="cat-sheet-save" id="catSheetSave">Save</button>
+      <button class="cat-sheet-delete" id="catSheetDelete">Delete</button>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(sheet);
+
+  const input = document.getElementById('catSheetInput');
+  input.focus();
+  input.select();
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); saveCategorySheet(key); }
+  });
+
+  document.getElementById('catSheetSave').onclick = () => saveCategorySheet(key);
+  document.getElementById('catSheetDelete').onclick = () => {
+    api.deleteDrawerCategory(key);
+    closeCategorySheet();
+    renderDrawer();
+  };
+}
+
+function saveCategorySheet(key) {
+  const input = document.getElementById('catSheetInput');
+  if (!input) return;
+  const newName = input.value.trim();
+  const cat = store.drawerCategories[key];
+  if (newName && cat && newName !== cat.label) {
+    api.renameDrawerCategory(key, newName);
+  }
+  closeCategorySheet();
+  renderDrawer();
+}
+
+function closeCategorySheet() {
+  const overlay = document.querySelector('.cat-sheet-overlay');
+  const sheet = document.querySelector('.cat-sheet');
+  if (overlay) overlay.remove();
+  if (sheet) sheet.remove();
 }
 
 // Track which drawer groups are open (persists across re-renders)
