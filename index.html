@@ -388,17 +388,40 @@ async function handleLogin() {
   btn.textContent = 'Sending...';
   msg.textContent = '';
 
-  const result = await TinyApeAuth.signIn(email);
+  try {
+    // Ensure Supabase is initialized (may not be ready on slow mobile connections)
+    if (!window.supabase) {
+      console.warn('[Auth] Supabase not ready — retrying init');
+      await TinyApeAuth.initAuth();
+    }
 
-  if (result.error) {
-    msg.textContent = result.error.message || 'Something went wrong';
+    if (!window.supabase) {
+      msg.textContent = 'Still connecting — please try again in a moment';
+      msg.className = 'login-message error';
+      btn.disabled = false;
+      btn.textContent = 'Send Magic Link';
+      return;
+    }
+
+    const result = await TinyApeAuth.signIn(email);
+
+    if (!result.success) {
+      const errMsg = typeof result.error === 'string' ? result.error : (result.error && result.error.message);
+      msg.textContent = errMsg || 'Something went wrong — please try again';
+      msg.className = 'login-message error';
+      btn.disabled = false;
+      btn.textContent = 'Send Magic Link';
+    } else {
+      msg.textContent = 'Check your email for a magic link!';
+      msg.className = 'login-message success';
+      btn.textContent = 'Link sent!';
+    }
+  } catch (err) {
+    console.error('[Auth] handleLogin error:', err);
+    msg.textContent = err.message || 'Something went wrong — please try again';
     msg.className = 'login-message error';
     btn.disabled = false;
     btn.textContent = 'Send Magic Link';
-  } else {
-    msg.textContent = 'Check your email for a magic link!';
-    msg.className = 'login-message success';
-    btn.textContent = 'Link sent!';
   }
 }
 
