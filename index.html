@@ -492,6 +492,9 @@ async function loadAndShowApp() {
     setTimeout(() => showToast('Welcome to TinyApe! Add your first task to get started.'), 500);
   }
 
+  // Due Today nudge — show once per day if On Deck items are due
+  setTimeout(() => checkDueTodayPopup(), 600);
+
   // Start realtime push-based sync + fallback poll
   startRealtimeSync();
   startPeriodicSync();

@@ -236,14 +236,17 @@ window._isSafeToSync = function() { return true; };
     { id: 'p11', title: 'Website redesign', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '[ ] Wireframes\n[ ] Color palette\n[ ] Mobile mockups\n[x] Competitor analysis\n[x] Content audit', drawer: false, drawerCategory: null, isProject: true, trackTime: true, timeSessions: [{ date: twoDaysAgo, minutes: 120, note: 'Competitor research' }, { date: yesterday, minutes: 90, note: 'Content audit' }] }
   );
 
-  // On Deck tasks
+  // On Deck tasks (includes items due today to trigger Due Today popup)
   store.tasks.push(
     { id: 'p30', title: 'Schedule dentist appointment', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: tomorrow, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
     { id: 'p31', title: 'Order new office supplies', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '[ ] Printer paper\n[ ] Sticky notes\n[ ] Pens', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
     { id: 'p32', title: 'Review insurance renewal', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
     { id: 'p33', title: 'Follow up with vendor on pricing', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: 'weekly', recurDays: null, dueDate: tomorrow, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
     { id: 'p34', title: 'Plan team offsite agenda', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: null, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p35', title: 'Renew business license', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: farOut, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] }
+    { id: 'p35', title: 'Renew business license', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: farOut, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p36', title: 'Send quarterly tax estimate', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: today, projectId: null, notes: 'Check with accountant first', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p37', title: 'Review and sign lease amendment', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: today, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
+    { id: 'p38', title: 'Call bank about wire transfer', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: today, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: true, trackTime: false, timeSessions: [] }
   );
 
   // Drawer tasks
@@ -275,6 +278,10 @@ window._isSafeToSync = function() { return true; };
   setDate();
   render();
   renderHallOfFame();
+
+  // Clear the localStorage gate so the popup shows every preview load
+  try { localStorage.removeItem('tinyape-due-today-shown'); } catch(e) {}
+  setTimeout(() => checkDueTodayPopup(), 600);
 })();
 </script>
 

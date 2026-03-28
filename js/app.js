@@ -4876,6 +4876,112 @@ function renderHallOfFame() {
   el.classList.add('visible');
 }
 
+// ─── DUE TODAY POPUP ───
+// Shows once per day on first load if there are On Deck items due today.
+
+function checkDueTodayPopup() {
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  // Only show once per day
+  try {
+    if (localStorage.getItem('tinyape-due-today-shown') === todayStr) return;
+  } catch(e) {}
+
+  // Find On Deck items due today (not already in Today, not done, not in drawer)
+  const dueTodayTasks = store.tasks.filter(t =>
+    t.dueDate === todayStr && !t.today && !t.done && !t.drawer
+  );
+
+  if (!dueTodayTasks.length) return;
+
+  // Mark as shown
+  try { localStorage.setItem('tinyape-due-today-shown', todayStr); } catch(e) {}
+
+  showDueTodayPopup(dueTodayTasks);
+}
+
+function showDueTodayPopup(tasks) {
+  // Overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'due-today-overlay';
+  overlay.onclick = () => closeDueTodayPopup();
+
+  // Popup
+  const popup = document.createElement('div');
+  popup.className = 'due-today-popup';
+  popup.id = 'dueTodayPopup';
+
+  let itemsHtml = tasks.map(t => {
+    const notesIcon = t.notes ? '<span class="notes-indicator">📄</span>' : '';
+    const projectIcon = t.isProject ? '<span class="project-indicator">⏱</span>' : '';
+    return `<div class="due-today-item" data-id="${t.id}">
+      <button class="vote-btn" onclick="dueTodayVoteUp(${qid(t.id)})" title="Add to today">
+        ${plusSvg}
+      </button>
+      <span class="due-today-title">${t.title}${notesIcon}${projectIcon}</span>
+    </div>`;
+  }).join('');
+
+  popup.innerHTML = `
+    <div class="due-today-handle"></div>
+    <div class="due-today-header">
+      <span class="due-today-heading">Due today</span>
+      <span class="due-today-count">${tasks.length}</span>
+    </div>
+    <div class="due-today-list">${itemsHtml}</div>
+    <div class="due-today-footer">
+      <button class="due-today-vote-all" onclick="dueTodayVoteAll()">Vote all up</button>
+      <button class="due-today-dismiss" onclick="closeDueTodayPopup()">Dismiss</button>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(popup);
+}
+
+function dueTodayVoteUp(id) {
+  const row = document.querySelector(`.due-today-item[data-id="${id}"]`);
+  if (row) {
+    row.style.opacity = '0.4';
+    row.querySelector('.vote-btn').disabled = true;
+    row.querySelector('.vote-btn').innerHTML = '<span style="color:var(--accent-red);font-size:12px;">✓</span>';
+  }
+  api.voteUp(id);
+  render();
+
+  // If all items voted, auto-close after a beat
+  const remaining = document.querySelectorAll('.due-today-item:not([style*="opacity"])');
+  if (!remaining.length) {
+    setTimeout(() => closeDueTodayPopup(), 400);
+  }
+}
+
+function dueTodayVoteAll() {
+  const items = document.querySelectorAll('.due-today-item');
+  items.forEach(row => {
+    const id = row.dataset.id;
+    const task = store.tasks.find(t => t.id === id);
+    if (task && !task.today && !task.done) {
+      api.voteUp(id);
+      row.style.opacity = '0.4';
+      const btn = row.querySelector('.vote-btn');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span style="color:var(--accent-red);font-size:12px;">✓</span>';
+      }
+    }
+  });
+  render();
+  setTimeout(() => closeDueTodayPopup(), 500);
+}
+
+function closeDueTodayPopup() {
+  const overlay = document.querySelector('.due-today-overlay');
+  const popup = document.getElementById('dueTodayPopup');
+  if (overlay) overlay.remove();
+  if (popup) popup.remove();
+}
+
 // ─── INIT ───
 // Initialization is handled by boot() in index.html
 // which loads data from Supabase before calling setDate(), render(), renderHallOfFame()
