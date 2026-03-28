@@ -356,6 +356,18 @@
         .catch(err => console.error('Sync error (addDrawerCategory):', err));
     };
 
+    // ─── Patch renameDrawerCategory ───
+    const _origRenameCat = api.renameDrawerCategory.bind(api);
+    api.renameDrawerCategory = function(key, newLabel) {
+      _lastCategoryWrite = Date.now();
+      _origRenameCat(key, newLabel);
+      const cat = store.drawerCategories[key];
+      if (cat) {
+        DB.saveDrawerCategory({ key, label: cat.label, color: cat.color, sortOrder: Object.keys(store.drawerCategories).indexOf(key) })
+          .catch(err => console.error('Sync error (renameDrawerCategory):', err));
+      }
+    };
+
     // ─── Patch deleteDrawerCategory ───
     const _origDelCat = api.deleteDrawerCategory.bind(api);
     api.deleteDrawerCategory = function(key) {

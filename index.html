@@ -116,6 +116,16 @@
   /* Hide sign out when mobile popups are open */
   body.notes-open .login-signout,
   body.modal-open .login-signout { display: none; }
+  /* Mobile: sign out flows at page bottom, not fixed */
+  @media (max-width: 640px) {
+    .login-signout {
+      position: static;
+      display: block;
+      margin: 40px auto 24px;
+      opacity: 0.4;
+      z-index: auto;
+    }
+  }
   .app-loading {
     display: flex;
     align-items: center;

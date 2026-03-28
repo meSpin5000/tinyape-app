@@ -2012,6 +2012,16 @@
     gap: 4px;
     cursor: default;
   }
+  .drawer-cat-item .cat-label {
+    cursor: pointer;
+    transition: color 0.15s;
+  }
+  .drawer-cat-item .cat-label:hover {
+    color: var(--text);
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+  }
   .drawer-cat-item .cat-x {
     cursor: pointer;
     opacity: 0;
@@ -3581,6 +3591,11 @@
     /* Drawer — hide slide-out on mobile, show inline section */
     /* Old slide-out drawer removed — now inline in all breakpoints */
     .mobile-bottom-spacer { display: block; height: 80px; }
+
+    /* Show category ✕ on mobile (no hover) */
+    .drawer-cat-item .cat-x {
+      opacity: 0.4;
+    }
 
     /* Archive popup mobile */
     .archive-popup {

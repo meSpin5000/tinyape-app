@@ -153,6 +153,11 @@ const api = {
     store.tasks.forEach(t => { if (t.drawerCategory === key) t.drawerCategory = null; });
     if (store.drawerCatFilter === key) store.drawerCatFilter = null;
   },
+  renameDrawerCategory(key, newLabel) {
+    if (store.drawerCategories[key]) {
+      store.drawerCategories[key].label = newLabel;
+    }
+  },
 
   // ─── Project & Time methods ───
   toggleProject(id) {
@@ -1929,6 +1934,43 @@ function handleDeleteDrawerCategory(key) {
   renderDrawer();
 }
 
+function handleRenameDrawerCategory(key) {
+  const cat = store.drawerCategories[key];
+  if (!cat) return;
+  const item = document.querySelector(`.drawer-cat-item[data-cat-key="${key}"]`);
+  if (!item) return;
+  const labelEl = item.querySelector('.cat-label');
+  if (!labelEl) return;
+
+  // Replace label with inline input
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'cat-rename-input';
+  input.value = cat.label;
+  input.style.cssText = 'width:80px;font-size:13px;padding:1px 4px;border:1px solid var(--accent-red);border-radius:3px;font-family:Inter,sans-serif;background:var(--bg);color:var(--text);outline:none;';
+
+  const save = () => {
+    const newName = input.value.trim();
+    if (newName && newName !== cat.label) {
+      api.renameDrawerCategory(key, newName);
+      renderDrawer();
+    } else {
+      // Revert — just re-render
+      renderDrawer();
+    }
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { renderDrawer(); }
+  });
+  input.addEventListener('blur', save);
+
+  labelEl.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
 // Track which drawer groups are open (persists across re-renders)
 const drawerGroupOpen = { someday: true };
 
@@ -1953,8 +1995,8 @@ function renderDrawer() {
   const catEntries = Object.entries(cats);
   if (catEntries.length) {
     catEntries.forEach(([key, cat]) => {
-      pillsHtml += `<span class="drawer-cat-item">
-        <span class="cat-dot" style="background:${cat.color};width:6px;height:6px;border-radius:50%;display:inline-block;"></span>${cat.label}<span class="cat-x" onclick="handleDeleteDrawerCategory('${key}')" title="Remove">✕</span>
+      pillsHtml += `<span class="drawer-cat-item" data-cat-key="${key}">
+        <span class="cat-dot" style="background:${cat.color};width:6px;height:6px;border-radius:50%;display:inline-block;"></span><span class="cat-label" onclick="handleRenameDrawerCategory('${key}')" title="Click to rename">${cat.label}</span><span class="cat-x" onclick="handleDeleteDrawerCategory('${key}')" title="Remove">✕</span>
       </span>`;
     });
   }
