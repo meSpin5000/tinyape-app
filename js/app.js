@@ -841,6 +841,13 @@ function getDefaultDueDate() {
   return d.toISOString().split('T')[0];
 }
 
+function getDefaultProjectDueDate() {
+  // Default: 30 days from today for projects
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  return d.toISOString().split('T')[0];
+}
+
 // Legacy alias — schedule popover and other code still calls this
 function renderAddTaskOptions() {
   // Only render if modal is open
@@ -849,16 +856,23 @@ function renderAddTaskOptions() {
   }
 }
 
+function _localDateStr(d) {
+  // Local YYYY-MM-DD (not UTC) for timezone-correct day boundaries
+  const dd = d || new Date();
+  return dd.getFullYear() + '-' + String(dd.getMonth()+1).padStart(2,'0') + '-' + String(dd.getDate()).padStart(2,'0');
+}
+
+function _tsToLocalDate(ts) {
+  // Convert an ISO timestamp to local YYYY-MM-DD
+  return _localDateStr(new Date(ts));
+}
+
 function updateCounts() {
-  // Counter = completed tasks + today's sub-item/project checklist completions from completionLog
-  const doneTasks = api.getDoneTasks().length;
-  // Count today's completion events from log (includes sub-item checks)
-  const todayStr = new Date().toISOString().split('T')[0];
-  const logToday = completionLog.filter(e => e.ts && e.ts.startsWith(todayStr)).length;
-  // Use whichever is higher — log is the source of truth when sub-items are checked
-  const total = Math.max(doneTasks, logToday);
+  // Counter = today's completion events from log (local timezone)
+  const todayStr = _localDateStr();
+  const logToday = completionLog.filter(e => e.ts && _tsToLocalDate(e.ts) === todayStr).length;
   const counter = document.getElementById('dailyCounter');
-  if (counter) counter.textContent = total;
+  if (counter) counter.textContent = logToday;
 }
 
 function bumpCounter() {
@@ -873,10 +887,9 @@ function bumpCounter() {
   counter.classList.add('bump');
 }
 
-// ─── MINI REWARD (sub-task / time log) ───
-// Confetti burst near counter + ape jump — lighter than a full creature spawn
+// ─── MINI REWARD (sub-task) ───
+// Confetti burst near counter + ape jump — visual only, no counter/HOF increment
 function miniReward() {
-  bumpCounter();
   // Ape jump celebration
   try {
     if (typeof apeJump === 'function') apeJump();
@@ -1245,7 +1258,7 @@ function renderAddModalPills() {
     }
   }
 
-  if (!isTodayCtx && addModalContext !== 'drawer') html += `<span class="add-modal-hint">if not specified, tasks default to one week out</span>`;
+  // Helper text removed — each section now has its own sensible default date
 
   el.innerHTML = html;
 }
@@ -1464,7 +1477,17 @@ function addModalSubmit(destination) {
     store.selectedDueDate = todayStr;
     renderAddModalPills(); // visually snap the calendar pill to today
   }
-  const dueDate = isToday ? (store.selectedDueDate || todayStr) : store.selectedDueDate || (isDrawer ? null : getDefaultDueDate());
+  // Default dates by section: Today → today, Drawer → none, Projects → +30 days, On Deck → +7 days
+  let dueDate;
+  if (isToday) {
+    dueDate = store.selectedDueDate || todayStr;
+  } else if (isDrawer) {
+    dueDate = store.selectedDueDate || null;
+  } else if (store.addTaskAsProject) {
+    dueDate = store.selectedDueDate || getDefaultProjectDueDate();
+  } else {
+    dueDate = store.selectedDueDate || getDefaultDueDate();
+  }
 
   const task = api.addTask(
     title, '',
@@ -3359,19 +3382,8 @@ function handleInlineCheck(cb) {
         }
       }
       if (wasChecked) {
-        // Checked: mini reward (confetti + ape jump + log completion)
+        // Checked: mini reward (confetti + ape jump) — no counter/HOF increment for sub-items
         miniReward();
-      } else {
-        // Unchecked: remove most recent completion event + update counter/HoF
-        if (completionLog.length > 0) completionLog.pop();
-        updateCounts();
-        renderHallOfFame();
-        if (window.TinyApeDB && window.TinyApeDB.deleteLatestCompletionEvent) {
-          if (window._markCompletionWrite) window._markCompletionWrite();
-          window.TinyApeDB.deleteLatestCompletionEvent().catch(err =>
-            console.error('Error removing completion event:', err)
-          );
-        }
       }
     }
   }
@@ -4724,27 +4736,17 @@ function getMonday(d) {
 
 function computeHofData() {
   const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
+  const todayStr = _localDateStr(now);
   const thisMonday = getMonday(now);
   const thisSunday = new Date(thisMonday);
   thisSunday.setDate(thisSunday.getDate() + 6);
 
-  // Count by day
+  // Count by day (local timezone)
   const dayCounts = {};
   completionLog.forEach(e => {
     if (!e.ts) return;
-    const day = e.ts.split('T')[0];
+    const day = _tsToLocalDate(e.ts);
     dayCounts[day] = (dayCounts[day] || 0) + 1;
-  });
-
-  // Also count completed tasks from store (for today's live count if no log entries yet)
-  store.tasks.forEach(t => {
-    if (t.done && t.completedAt) {
-      const day = t.completedAt.split('T')[0];
-      if (!dayCounts[day]) dayCounts[day] = 0;
-      // Don't double count — completionLog should be the source of truth
-      // but for demo purposes, include store data too
-    }
   });
 
   // Build sorted day list
@@ -4753,17 +4755,17 @@ function computeHofData() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
-  // Count by week (Mon–Sun)
+  // Count by week (Mon–Sun, local timezone)
   const weekCounts = {};
   completionLog.forEach(e => {
     if (!e.ts) return;
     const d = new Date(e.ts);
     const mon = getMonday(d);
-    const key = mon.toISOString().split('T')[0];
+    const key = _localDateStr(mon);
     weekCounts[key] = (weekCounts[key] || 0) + 1;
   });
 
-  const thisMondayStr = thisMonday.toISOString().split('T')[0];
+  const thisMondayStr = _localDateStr(thisMonday);
   const weeks = Object.entries(weekCounts)
     .map(([monStr, count]) => {
       const mon = new Date(monStr + 'T00:00:00');

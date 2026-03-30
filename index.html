@@ -675,6 +675,21 @@ function startRealtimeSync() {
   }, (payload) => {
     const row = payload.new;
     if (window._isEcho && window._isEcho(row.id)) return;
+    // Check if this is our own task awaiting UUID swap (local ID → UUID race)
+    const pendingLocal = store.tasks.find(t => t._pendingSaveTimer || (typeof t.id === 'number' && t._localId === undefined));
+    if (pendingLocal && !store.tasks.some(t => t.id === row.id)) {
+      // Likely our own INSERT — silently swap the ID
+      pendingLocal._localId = pendingLocal.id;
+      pendingLocal.id = row.id;
+      // Merge any DB-side fields (like server-set defaults)
+      const jsTask = TinyApeDB._mapDbTaskToJs(row);
+      Object.keys(jsTask).forEach(k => {
+        if (k !== 'id' && k !== '_localId' && pendingLocal[k] === undefined) {
+          pendingLocal[k] = jsTask[k];
+        }
+      });
+      return; // no render needed
+    }
     console.log('[Realtime] Task INSERT:', row.title);
     const jsTask = TinyApeDB._mapDbTaskToJs(row);
     if (row.killed) {

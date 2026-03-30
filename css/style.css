@@ -3541,19 +3541,14 @@
     }
     .add-modal-pills {
       padding: 10px 16px;
-      gap: 5px;
-      flex-wrap: nowrap;
+      gap: 6px;
+      flex-wrap: wrap;
     }
     .add-modal-pill {
-      flex: 1;
-      min-width: 0;
-      justify-content: center;
-      font-size: 11px;
+      font-size: 12px;
       height: 30px;
-      padding: 0 4px;
+      padding: 0 10px;
       white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
     .add-modal-actions {
       padding: 10px 16px 14px;
@@ -3947,12 +3942,12 @@
       height: 9px;
     }
     .add-modal-pill {
-      font-size: 10px;
-      height: 24px;
-      padding: 0 6px;
+      font-size: 11px;
+      height: 26px;
+      padding: 0 8px;
     }
     .add-modal-pill svg {
-      width: 10px;
-      height: 10px;
+      width: 11px;
+      height: 11px;
     }
   }
