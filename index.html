@@ -716,6 +716,13 @@ function startRealtimeSync() {
     const idx = store.tasks.findIndex(t => t.id === row.id);
     const kIdx = store.killedTasks.findIndex(t => t.id === row.id);
 
+    // Preserve local timeSessions — they live in a separate table and
+    // won't be present on Realtime task row payloads
+    const localTask = idx !== -1 ? store.tasks[idx] : (kIdx !== -1 ? store.killedTasks[kIdx] : null);
+    if (localTask && localTask.timeSessions && localTask.timeSessions.length && (!jsTask.timeSessions || !jsTask.timeSessions.length)) {
+      jsTask.timeSessions = localTask.timeSessions;
+    }
+
     if (row.killed) {
       // Task was killed — move from active to killed
       if (idx !== -1) store.tasks.splice(idx, 1);

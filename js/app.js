@@ -106,6 +106,10 @@ const api = {
     const maxOrder = Math.max(0, ...store.tasks.filter(t => t.today && !t.done).map(t => t.todayOrder || 0));
     task.today = true;
     task.todayOrder = maxOrder + 1;
+    // Clear drawer flag — task is now in Today
+    if (task.drawer) {
+      task.drawer = false;
+    }
     return task;
   },
   // ─── Drawer methods ───
@@ -222,11 +226,7 @@ const api = {
   },
   _respawnRecurring(original) {
     const nextDate = this._getNextRecurDate(original);
-    // Route to drawer if next occurrence is 30+ days out
-    const now = new Date(); now.setHours(0,0,0,0);
-    const nextD = nextDate ? new Date(nextDate + 'T00:00:00') : null;
-    const daysOut = nextD ? Math.round((nextD - now) / (1000*60*60*24)) : 0;
-    const toDrawer = daysOut >= 30;
+    // Always respawn to On Deck — the 30+ day toggle handles visibility
     const newTask = {
       id: store.nextId++,
       title: original.title,
@@ -239,8 +239,8 @@ const api = {
       dueDate: nextDate,
       projectId: original.projectId,
       notes: "",
-      drawer: toDrawer,
-      drawerCategory: original.drawerCategory || null
+      drawer: false,
+      drawerCategory: null
     };
     store.tasks.push(newTask);
     return newTask;
@@ -324,6 +324,7 @@ const projectIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="no
 const sunIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1.5" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="14.5" y2="8"/><line x1="3.4" y1="3.4" x2="4.5" y2="4.5"/><line x1="11.5" y1="11.5" x2="12.6" y2="12.6"/><line x1="3.4" y1="12.6" x2="4.5" y2="11.5"/><line x1="11.5" y1="4.5" x2="12.6" y2="3.4"/></svg>`;
 const onDeckIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="2" x2="8" y2="11"/><polyline points="4,8 8,12 12,8"/></svg>`;
 const categoryIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5A1.5 1.5 0 013.5 2H7l1.5 2H12.5A1.5 1.5 0 0114 5.5v7a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 12.5z"/></svg>`;
+const copyIconSvg = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>`;
 
 
 const celebrationMessages = [
@@ -699,6 +700,73 @@ function renderProjectsList() {
   }).join('');
 }
 
+function copyProjectsList() {
+  const projects = api.getProjectTasks();
+  if (!projects.length) {
+    showToast('No projects to copy');
+    return;
+  }
+  const lines = [];
+  projects.forEach((t, idx) => {
+    lines.push(`${idx + 1}. ${t.title}`);
+    // Checklist items from notes
+    if (t.notes) {
+      t.notes.split('\n').forEach(line => {
+        if (line.startsWith('[x] ')) {
+          lines.push(`   ✓ ${line.slice(4)}`);
+        } else if (line.startsWith('[ ] ')) {
+          lines.push(`   ☐ ${line.slice(4)}`);
+        } else if (line.trim()) {
+          lines.push(`   ${line}`);
+        }
+      });
+    }
+    // Progress + time
+    const prog = api.getChecklistProgress(t.id);
+    const totalMins = (t.timeSessions || []).reduce((sum, s) => sum + s.minutes, 0);
+    const meta = [];
+    if (prog.total > 0) meta.push(`${prog.checked}/${prog.total} done`);
+    if (totalMins) meta.push(formatMinutes(totalMins) + ' tracked');
+    if (t.dueDate) meta.push('due ' + t.dueDate);
+    if (meta.length) lines.push(`   [${meta.join(' · ')}]`);
+    lines.push('');
+  });
+  navigator.clipboard.writeText(lines.join('\n').trim()).then(() => {
+    showToast('Projects copied to clipboard');
+  }).catch(() => {
+    showToast('Copy failed');
+  });
+}
+
+function copyProjectToClipboard(id) {
+  const task = store.tasks.find(t => t.id === id);
+  if (!task) return;
+  const lines = [task.title];
+  if (task.notes) {
+    task.notes.split('\n').forEach(line => {
+      if (line.startsWith('[x] ')) {
+        lines.push(`  ✓ ${line.slice(4)}`);
+      } else if (line.startsWith('[ ] ')) {
+        lines.push(`  ☐ ${line.slice(4)}`);
+      } else if (line.trim()) {
+        lines.push(`  ${line}`);
+      }
+    });
+  }
+  const prog = api.getChecklistProgress(task.id);
+  const totalMins = (task.timeSessions || []).reduce((sum, s) => sum + s.minutes, 0);
+  const meta = [];
+  if (prog.total > 0) meta.push(`${prog.checked}/${prog.total} done`);
+  if (totalMins) meta.push(formatMinutes(totalMins) + ' tracked');
+  if (task.dueDate) meta.push('due ' + task.dueDate);
+  if (meta.length) lines.push(`[${meta.join(' · ')}]`);
+  navigator.clipboard.writeText(lines.join('\n')).then(() => {
+    showToast('Copied to clipboard');
+  }).catch(() => {
+    showToast('Copy failed');
+  });
+}
+
 function renderBacklogItem(t) {
   const recurLabel = formatRecurring(t);
   const recurInline = recurLabel
@@ -1013,11 +1081,7 @@ function handleToggleDone(id) {
       if (wasRecurring) {
         const respawned = store.tasks.find(t => t.title === taskTitle && !t.done && t.id !== currentId);
         if (respawned) {
-          if (respawned.drawer) {
-            showToast(`↻ Next "${respawned.title}" filed to Drawer`);
-          } else {
-            showToast(`↻ "${respawned.title}" respawned to On Deck`);
-          }
+          showToast(`↻ "${respawned.title}" respawned to On Deck`);
         }
       }
     }, 350);
@@ -1372,31 +1436,7 @@ function saveAddModalNewCategory() {
 
 function renderAddModalActions() {
   const el = document.getElementById('addModalActions');
-
-  const buttons = [
-    { dest: 'today', label: 'Today' },
-    { dest: 'ondeck', label: store.addTaskAsProject ? 'Projects' : 'On Deck' },
-    { dest: 'drawer', label: 'Drawer' }
-  ];
-
-  let html = '';
-  buttons.forEach(b => {
-    const isSelected = b.dest === addModalDestination;
-    html += `<button class="add-modal-action-btn${isSelected ? ' selected' : ''}" onclick="selectModalDestination('${b.dest}')">${b.label}</button>`;
-  });
-  html += `<button class="add-modal-action-btn primary" onclick="addModalSubmit(addModalDestination)">OK</button>`;
-
-  el.innerHTML = html;
-}
-
-function selectModalDestination(dest) {
-  addModalDestination = dest;
-  // If selecting Today, snap the date pill to today
-  if (dest === 'today' && !store.selectedDueDate) {
-    store.selectedDueDate = new Date().toISOString().split('T')[0];
-    renderAddModalPills();
-  }
-  renderAddModalActions();
+  el.innerHTML = `<button class="add-modal-action-btn primary" onclick="addModalSubmit(addModalDestination)">OK</button>`;
 }
 
 function toggleAddAsProject() {
@@ -2395,7 +2435,6 @@ function renderSchedulePopover() {
 
   // Bottom row
   const bottomHtml = `<div class="recur-bottom-row">
-    <button class="recur-today-btn" id="schedToday">Today</button>
     <button class="recur-clear-btn" id="schedClear">Clear</button>
     <button class="recur-ok-btn" id="schedOk">OK</button>
   </div>`;
@@ -2415,10 +2454,25 @@ function renderSchedulePopover() {
     btn.addEventListener('click', () => {
       task.dueDate = btn.dataset.date;
       const isAddTask = schedulePopoverTaskId === -1;
+      const todayStr = _localDateStr();
+      const isToday = btn.dataset.date === todayStr;
       closeSchedulePopover();
       if (isAddTask) {
+        // Auto-vote-up: if user picks today's date, submit to Today section
+        if (isToday) {
+          const input = document.getElementById('addTaskInput');
+          if (input && input.value.trim()) {
+            addModalSubmit('today');
+            return;
+          }
+        }
         renderAddModalPills();
       } else {
+        // Existing task: auto-vote-up to Today if today's date selected
+        if (isToday && !task.today) {
+          api.voteUp(task.id);
+          showToast('Moved to Today');
+        }
         render();
         if (currentNotesTaskId === task.id) refreshSidebarMeta();
       }
@@ -2514,31 +2568,6 @@ function renderSchedulePopover() {
     });
   });
 
-  // Clear All
-  // Today — set date to today and vote up
-  pop.querySelector('#schedToday').addEventListener('click', () => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const isAddTask = schedulePopoverTaskId === -1;
-    if (isAddTask) {
-      // For add-task popover, set the date to today and submit
-      task.dueDate = todayStr;
-      closeSchedulePopover();
-      const input = document.getElementById('addTaskInput');
-      if (input && input.value.trim()) {
-        addModalSubmit('today');
-      } else {
-        renderAddModalPills();
-      }
-    } else {
-      task.dueDate = todayStr;
-      if (!task.today) api.voteUp(task.id);
-      closeSchedulePopover();
-      render();
-      if (currentNotesTaskId === task.id) refreshSidebarMeta();
-      showToast('Moved to Today');
-    }
-  });
-
   pop.querySelector('#schedClear').addEventListener('click', () => {
     task.dueDate = null;
     task.recurring = null;
@@ -2555,15 +2584,27 @@ function renderSchedulePopover() {
     if (task.recurring && !task.dueDate) {
       task.dueDate = api._getNextRecurDate(task);
     }
+    const todayStr = _localDateStr();
+    const isToday = task.dueDate === todayStr;
     // If this is the add-task popover and there's text, auto-add the task
     const isAddTask = schedulePopoverTaskId === -1;
     closeSchedulePopover();
     if (isAddTask) {
       const input = document.getElementById('addTaskInput');
       if (input && input.value.trim()) {
-        addTask();
+        // Auto-vote-up if date is today
+        if (isToday) {
+          addModalSubmit('today');
+        } else {
+          addModalSubmit(addModalDestination);
+        }
         return;
       }
+    }
+    // Existing task: auto-vote-up if date is today
+    if (isToday && !task.today) {
+      api.voteUp(task.id);
+      showToast('Moved to Today');
     }
     render();
     if (currentNotesTaskId === task.id) refreshSidebarMeta();
@@ -2852,14 +2893,14 @@ function openNotesSidebar(id, anchorEl) {
   const hasTime = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
   pillsHtml += `<span class="notes-card-pill${hasTime ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
 
-  // Contextual 5th pill: "On Deck" for Today tasks, "Category" for Drawer tasks, "Drawer" for others
+  // Contextual pill: "On Deck" for Today tasks, "Category" for Drawer tasks, "Drawer" for non-projects
   if (task.today) {
     pillsHtml += `<span class="notes-card-pill" onclick="handleRemoveFromToday(${qid(id)}); closeNotesCard(true);" title="Move to On Deck">${onDeckIconSvg} On Deck</span>`;
   } else if (task.drawer) {
     const catLabel = task.drawerCategory && store.drawerCategories[task.drawerCategory]
       ? store.drawerCategories[task.drawerCategory].label : 'Category';
     pillsHtml += `<span class="notes-card-pill${task.drawerCategory ? ' active' : ''}" onclick="openCardCategoryPicker(${qid(id)}, this)" title="Set category">${categoryIconSvg} ${catLabel}</span>`;
-  } else {
+  } else if (!task.isProject) {
     pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} Drawer</span>`;
   }
 
@@ -3082,14 +3123,14 @@ function refreshSidebarMeta() {
   const hasTime2 = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
   pillsHtml += `<span class="notes-card-pill${hasTime2 ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
 
-  // Contextual 5th pill: "On Deck" for Today tasks, "Category" for Drawer tasks, "Drawer" for others
+  // Contextual pill: "On Deck" for Today tasks, "Category" for Drawer tasks, "Drawer" for non-projects
   if (task.today) {
     pillsHtml += `<span class="notes-card-pill" onclick="handleRemoveFromToday(${qid(id)}); closeNotesCard(true);" title="Move to On Deck">${onDeckIconSvg} On Deck</span>`;
   } else if (task.drawer) {
     const catLabel = task.drawerCategory && store.drawerCategories[task.drawerCategory]
       ? store.drawerCategories[task.drawerCategory].label : 'Category';
     pillsHtml += `<span class="notes-card-pill${task.drawerCategory ? ' active' : ''}" onclick="openCardCategoryPicker(${qid(id)}, this)" title="Set category">${categoryIconSvg} ${catLabel}</span>`;
-  } else {
+  } else if (!task.isProject) {
     pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} Drawer</span>`;
   }
 
@@ -3155,12 +3196,14 @@ function formatMinutes(mins) {
 
 function renderProgressBarHtml(task) {
   if (!task.isProject) return '';
+  const copyBtn = `<button class="notes-copy-btn" onclick="copyProjectToClipboard(${qid(task.id)})" title="Copy project to clipboard">${copyIconSvg}</button>`;
   const prog = api.getChecklistProgress(task.id);
-  if (prog.total === 0) return '';
+  if (prog.total === 0) return `<div class="notes-progress-row">${copyBtn}</div>`;
   const pct = Math.round((prog.checked / prog.total) * 100);
   return `<div class="notes-progress-row">
     <div class="notes-progress-bar"><div class="notes-progress-fill" style="width:${pct}%"></div></div>
     <span class="notes-progress-label">${prog.checked}/${prog.total}</span>
+    ${copyBtn}
   </div>`;
 }
 
