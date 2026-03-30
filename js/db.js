@@ -131,7 +131,7 @@ window.TinyApeDB = {
         .from('time_sessions')
         .select('*')
         .eq('user_id', userId)
-        .order('session_date', { ascending: true });
+        .order('date', { ascending: true });
 
       if (timeError) {
         console.error('Error loading time sessions:', timeError);
@@ -140,7 +140,7 @@ window.TinyApeDB = {
       const timeByTask = {};
       (timeData || []).forEach(s => {
         if (!timeByTask[s.task_id]) timeByTask[s.task_id] = [];
-        timeByTask[s.task_id].push({ date: s.session_date, minutes: s.duration_minutes, note: s.note || '' });
+        timeByTask[s.task_id].push({ date: s.date, minutes: s.minutes, note: s.note || '' });
       });
 
       (tasksData || []).forEach(dbTask => {
@@ -692,8 +692,8 @@ window.TinyApeDB = {
       const sessionData = {
         user_id: userId,
         task_id: session.taskId,
-        session_date: session.date,
-        duration_minutes: session.minutes,
+        date: session.date,
+        minutes: session.minutes,
         note: session.note || ''
       };
 
@@ -711,8 +711,8 @@ window.TinyApeDB = {
         return {
           id: data[0].id,
           taskId: data[0].task_id,
-          date: data[0].session_date,
-          minutes: data[0].duration_minutes,
+          date: data[0].date,
+          minutes: data[0].minutes,
           note: data[0].note
         };
       }

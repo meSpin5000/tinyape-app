@@ -3249,7 +3249,13 @@ function renderTimeSectionHtml(task) {
 
 function toggleTimeAddForm() {
   const form = document.getElementById('timeAddForm');
-  if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  if (!form) return;
+  const opening = form.style.display === 'none';
+  form.style.display = opening ? 'block' : 'none';
+  if (opening) {
+    const noteInput = document.getElementById('timeSessionNote');
+    if (noteInput) setTimeout(() => noteInput.focus(), 50);
+  }
 }
 
 function saveTimeSession() {
