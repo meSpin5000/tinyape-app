@@ -38,7 +38,6 @@ window.TinyApeDB = {
     return {
       id: dbTask.id,
       title: dbTask.title,
-      category: dbTask.category,
       today: dbTask.today,
       todayOrder: dbTask.today_order,
       done: dbTask.done,
@@ -46,7 +45,6 @@ window.TinyApeDB = {
       recurring: dbTask.recurring,
       recurDays: dbTask.recur_days,
       dueDate: dbTask.due_date,
-      projectId: dbTask.project_id,
       notes: dbTask.notes,
       drawer: dbTask.drawer,
       drawerCategory: dbTask.drawer_category,
@@ -570,7 +568,7 @@ window.TinyApeDB = {
       const { error } = await window.supabase
         .from('drawer_categories')
         .delete()
-        .eq('id', categoryId)
+        .eq('key', categoryId)
         .eq('user_id', userId);
 
       if (error) {
