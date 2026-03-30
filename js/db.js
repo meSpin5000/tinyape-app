@@ -138,7 +138,7 @@ window.TinyApeDB = {
       const timeByTask = {};
       (timeData || []).forEach(s => {
         if (!timeByTask[s.task_id]) timeByTask[s.task_id] = [];
-        timeByTask[s.task_id].push({ date: s.date, minutes: s.minutes, note: s.note || '' });
+        timeByTask[s.task_id].push({ id: s.id, date: s.date, minutes: s.minutes, note: s.note || '' });
       });
 
       (tasksData || []).forEach(dbTask => {
@@ -754,6 +754,48 @@ window.TinyApeDB = {
       return true;
     } catch (err) {
       console.error('Unexpected error deleting time session:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Update an existing time session
+   * @param {string} sessionId - Session ID (UUID)
+   * @param {Object} updates - Fields to update { date, minutes, note }
+   * @returns {Promise<boolean>} True if updated, false otherwise
+   */
+  async updateTimeSession(sessionId, updates) {
+    try {
+      if (!window.supabase) {
+        console.error('Supabase not initialized');
+        return false;
+      }
+
+      const userId = await this._getUserId();
+      if (!userId) {
+        console.error('No user logged in');
+        return false;
+      }
+
+      const updateData = {};
+      if (updates.date !== undefined) updateData.date = updates.date;
+      if (updates.minutes !== undefined) updateData.minutes = updates.minutes;
+      if (updates.note !== undefined) updateData.note = updates.note;
+
+      const { error } = await window.supabase
+        .from('time_sessions')
+        .update(updateData)
+        .eq('id', sessionId)
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('Error updating time session:', error);
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.error('Unexpected error updating time session:', err);
       return false;
     }
   }

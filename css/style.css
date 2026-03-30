@@ -2772,6 +2772,29 @@
     transition: opacity 0.15s;
   }
   .time-session-delete:hover { color: var(--accent-red) !important; opacity: 1 !important; }
+  .time-session-item { cursor: pointer; border-radius: 4px; padding: 5px 4px; margin: 0 -4px; }
+  .time-session-item:hover { background: var(--bg-hover, rgba(0,0,0,0.03)); }
+  .time-session-item.editing { background: var(--bg-hover, rgba(0,0,0,0.03)); border-left: 2px solid var(--accent-red); }
+  .time-session-date { min-width: 36px; }
+  .time-edit-form {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    margin: 8px 0;
+  }
+  .time-cancel-btn {
+    padding: 8px 18px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+  }
+  .time-cancel-btn:hover { background: var(--bg-secondary); }
   .time-add-pill {
     display: inline-flex;
     align-items: center;
@@ -3820,6 +3843,8 @@
     .time-session-item {
       font-size: 10px;
     }
+    .time-session-item .time-session-delete { opacity: 0.4; }
+    .time-edit-form { padding: 8px; }
     .time-slider-label {
       font-size: 12px;
     }

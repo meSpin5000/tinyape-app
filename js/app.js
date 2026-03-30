@@ -181,7 +181,12 @@ const api = {
   deleteTimeSession(id, idx) {
     const task = store.tasks.find(t => t.id === id);
     if (!task || !task.timeSessions) return;
-    task.timeSessions.splice(idx, 1);
+    // idx is from the sorted (desc by date) view — find the actual session object
+    const sorted = task.timeSessions.slice().sort((a, b) => b.date.localeCompare(a.date));
+    const session = sorted[idx];
+    if (!session) return;
+    const realIdx = task.timeSessions.indexOf(session);
+    if (realIdx !== -1) task.timeSessions.splice(realIdx, 1);
   },
   getChecklistProgress(id) {
     const task = store.tasks.find(t => t.id === id);
@@ -3214,22 +3219,37 @@ function renderTimeSectionHtml(task) {
   let sessionsHtml = '';
   sessions.slice().sort((a, b) => b.date.localeCompare(a.date)).forEach((s, idx) => {
     const d = new Date(s.date + 'T00:00:00');
-    sessionsHtml += `<div class="time-session-item">
-      <span>${fmtDate(d)}</span>
+    sessionsHtml += `<div class="time-session-item" data-session-idx="${idx}" onclick="editTimeSession(${qid(task.id)}, ${idx})">
+      <span class="time-session-date">${fmtDate(d)}</span>
       <span class="time-session-duration">${formatMinutes(s.minutes)}</span>
       <span class="time-session-note">${s.note || ''}</span>
-      <span class="time-session-delete" onclick="deleteTimeSession(${task.id}, ${idx})">✕</span>
+      <span class="time-session-delete" onclick="event.stopPropagation(); deleteTimeSession(${qid(task.id)}, ${idx})">✕</span>
     </div>`;
   });
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = _localDateStr();
 
   return `<div class="time-section" id="timeSection">
     <div class="time-section-header">
       ⏱ Time${totalMins ? ' — <span class="time-total">' + formatMinutes(totalMins) + ' total</span>' : ''}
     </div>
-    ${sessionsHtml ? `<div class="time-session-list">${sessionsHtml}</div>` : ''}
-    <button class="time-add-pill" onclick="toggleTimeAddForm()">+ Add session</button>
+    ${sessionsHtml ? `<div class="time-session-list" id="timeSessionList">${sessionsHtml}</div>` : ''}
+    <div class="time-edit-form" id="timeEditForm" style="display:none;">
+      <div class="time-save-row">
+        <input type="date" class="time-date-input" id="timeEditDate" value="" />
+      </div>
+      <div class="time-slider-row">
+        <input type="range" class="time-slider" id="timeEditSlider" min="15" max="480" step="15" value="15"
+               oninput="document.getElementById('timeEditSliderLabel').textContent = formatMinutes(parseInt(this.value))">
+        <span class="time-slider-label" id="timeEditSliderLabel">15m</span>
+      </div>
+      <textarea class="time-note-input" id="timeEditNote" placeholder="What did you work on? (optional)" rows="2"></textarea>
+      <div class="time-save-row">
+        <button class="time-save-btn" onclick="saveTimeSessionEdit()">Save</button>
+        <button class="time-cancel-btn" onclick="cancelTimeSessionEdit()">Cancel</button>
+      </div>
+    </div>
+    <button class="time-add-pill" onclick="toggleTimeAddForm()" id="timeAddPill">+ Add session</button>
     <div class="time-add-form" id="timeAddForm" style="display:none;">
       <div class="time-save-row">
         <input type="date" class="time-date-input" id="timeSessionDate" value="${todayStr}" />
@@ -3247,9 +3267,84 @@ function renderTimeSectionHtml(task) {
   </div>`;
 }
 
+// Track which session is being edited
+let _editingSessionIdx = null;
+
+function editTimeSession(taskId, idx) {
+  const task = store.tasks.find(t => t.id === taskId);
+  if (!task || !task.timeSessions) return;
+  const sorted = task.timeSessions.slice().sort((a, b) => b.date.localeCompare(a.date));
+  const session = sorted[idx];
+  if (!session) return;
+
+  _editingSessionIdx = idx;
+
+  // Highlight the active row
+  document.querySelectorAll('.time-session-item').forEach(el => el.classList.remove('editing'));
+  const row = document.querySelector(`.time-session-item[data-session-idx="${idx}"]`);
+  if (row) row.classList.add('editing');
+
+  // Show edit form, hide add form and add pill
+  const editForm = document.getElementById('timeEditForm');
+  const addForm = document.getElementById('timeAddForm');
+  const addPill = document.getElementById('timeAddPill');
+  if (addForm) addForm.style.display = 'none';
+  if (addPill) addPill.style.display = 'none';
+  if (editForm) {
+    editForm.style.display = 'block';
+    document.getElementById('timeEditDate').value = session.date;
+    const slider = document.getElementById('timeEditSlider');
+    slider.value = session.minutes;
+    document.getElementById('timeEditSliderLabel').textContent = formatMinutes(session.minutes);
+    document.getElementById('timeEditNote').value = session.note || '';
+    setTimeout(() => document.getElementById('timeEditNote').focus(), 50);
+  }
+}
+
+function saveTimeSessionEdit() {
+  if (currentNotesTaskId === null || _editingSessionIdx === null) return;
+  const date = document.getElementById('timeEditDate').value;
+  const minutes = parseInt(document.getElementById('timeEditSlider').value);
+  const note = document.getElementById('timeEditNote').value.trim();
+
+  if (api.updateTimeSession) {
+    api.updateTimeSession(currentNotesTaskId, _editingSessionIdx, { date, minutes, note });
+  } else {
+    // Fallback if sync hasn't patched it — update locally
+    const task = store.tasks.find(t => t.id === currentNotesTaskId);
+    if (task && task.timeSessions) {
+      const sorted = task.timeSessions.slice().sort((a, b) => b.date.localeCompare(a.date));
+      const session = sorted[_editingSessionIdx];
+      if (session) {
+        session.date = date;
+        session.minutes = minutes;
+        session.note = note;
+      }
+    }
+  }
+
+  _editingSessionIdx = null;
+  // Refresh the notes card to show updated data
+  const id = currentNotesTaskId;
+  closeNotesCard();
+  openNotesSidebar(id);
+  showToast('Session updated');
+}
+
+function cancelTimeSessionEdit() {
+  _editingSessionIdx = null;
+  const editForm = document.getElementById('timeEditForm');
+  const addPill = document.getElementById('timeAddPill');
+  if (editForm) editForm.style.display = 'none';
+  if (addPill) addPill.style.display = '';
+  document.querySelectorAll('.time-session-item').forEach(el => el.classList.remove('editing'));
+}
+
 function toggleTimeAddForm() {
   const form = document.getElementById('timeAddForm');
   if (!form) return;
+  // Close any edit in progress
+  cancelTimeSessionEdit();
   const opening = form.style.display === 'none';
   form.style.display = opening ? 'block' : 'none';
   if (opening) {

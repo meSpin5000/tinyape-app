@@ -283,6 +283,15 @@
       const task = _origAddTime(id, date, minutes, note);
       persistTask(task);
       DB.saveTimeSession({ taskId: id, date, minutes, note: note || '' })
+        .then(saved => {
+          // Store the DB id on the local session so we can delete/update it later
+          if (saved && saved.id && task && task.timeSessions) {
+            const last = task.timeSessions[task.timeSessions.length - 1];
+            if (last && last.date === date && last.minutes === minutes) {
+              last.id = saved.id;
+            }
+          }
+        })
         .catch(err => console.error('Sync error (addTimeSession):', err));
       return task;
     };
@@ -290,9 +299,43 @@
     // ─── Patch deleteTimeSession ───
     const _origDelTime = api.deleteTimeSession.bind(api);
     api.deleteTimeSession = function(id, idx) {
-      _origDelTime(id, idx);
+      // Grab the DB session id BEFORE splicing
       const task = store.tasks.find(t => t.id === id);
+      const sessions = task && task.timeSessions ? task.timeSessions.slice().sort((a, b) => b.date.localeCompare(a.date)) : [];
+      const session = sessions[idx];
+      const dbSessionId = session && session.id;
+
+      _origDelTime(id, idx);
       persistTask(task);
+
+      // Delete from time_sessions table in DB
+      if (dbSessionId) {
+        DB.deleteTimeSession(dbSessionId)
+          .catch(err => console.error('Sync error (deleteTimeSession):', err));
+      }
+    };
+
+    // ─── Patch updateTimeSession ───
+    api.updateTimeSession = function(taskId, sessionIdx, updates) {
+      const task = store.tasks.find(t => t.id === taskId);
+      if (!task || !task.timeSessions) return;
+      // Sessions are displayed sorted desc by date — find the right one
+      const sorted = task.timeSessions.slice().sort((a, b) => b.date.localeCompare(a.date));
+      const session = sorted[sessionIdx];
+      if (!session) return;
+
+      // Update local
+      if (updates.date !== undefined) session.date = updates.date;
+      if (updates.minutes !== undefined) session.minutes = updates.minutes;
+      if (updates.note !== undefined) session.note = updates.note;
+
+      persistTask(task);
+
+      // Update in DB
+      if (session.id) {
+        DB.updateTimeSession(session.id, updates)
+          .catch(err => console.error('Sync error (updateTimeSession):', err));
+      }
     };
 
     // ─── Patch toggleDone ───
