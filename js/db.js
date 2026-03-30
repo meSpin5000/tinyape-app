@@ -126,8 +126,27 @@ window.TinyApeDB = {
       const tasks = [];
       const killedTasks = [];
 
+      // Load time sessions and build a lookup by task_id
+      const { data: timeData, error: timeError } = await window.supabase
+        .from('time_sessions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('session_date', { ascending: true });
+
+      if (timeError) {
+        console.error('Error loading time sessions:', timeError);
+      }
+
+      const timeByTask = {};
+      (timeData || []).forEach(s => {
+        if (!timeByTask[s.task_id]) timeByTask[s.task_id] = [];
+        timeByTask[s.task_id].push({ date: s.session_date, minutes: s.duration_minutes, note: s.note || '' });
+      });
+
       (tasksData || []).forEach(dbTask => {
         const jsTask = this._mapDbTaskToJs(dbTask);
+        // Merge time sessions from the separate table
+        jsTask.timeSessions = timeByTask[dbTask.id] || [];
         if (dbTask.killed) {
           killedTasks.push(jsTask);
         } else {
