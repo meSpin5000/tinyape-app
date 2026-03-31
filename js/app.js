@@ -231,7 +231,17 @@ const api = {
   },
   _respawnRecurring(original) {
     const nextDate = this._getNextRecurDate(original);
-    // Always respawn to On Deck — the 30+ day toggle handles visibility
+
+    // Carry over notes but reset checklist items to unchecked
+    let respawnedNotes = '';
+    if (original.notes) {
+      respawnedNotes = original.notes.split('\n').map(line => {
+        if (line.startsWith('[x] ')) return '[ ] ' + line.slice(4);
+        return line;
+      }).join('\n');
+    }
+
+    // Recurring projects respawn as projects (stay in Projects section)
     const newTask = {
       id: store.nextId++,
       title: original.title,
@@ -243,9 +253,13 @@ const api = {
       recurDays: original.recurDays ? [...original.recurDays] : null,
       dueDate: nextDate,
       projectId: original.projectId,
-      notes: "",
+      notes: respawnedNotes,
       drawer: false,
-      drawerCategory: null
+      drawerCategory: original.drawerCategory || null,
+      isProject: original.isProject || false,
+      trackTime: original.trackTime || false,
+      timeSessions: [],  // fresh — don't carry over logged time
+      projectOrder: original.projectOrder || null
     };
     store.tasks.push(newTask);
     return newTask;
@@ -264,7 +278,7 @@ const api = {
     if (task.recurring === 'daily') {
       const d = new Date(base);
       d.setDate(d.getDate() + 1);
-      return d.toISOString().split('T')[0];
+      return _localDateStr(d);
     }
 
     if (task.recurDays && task.recurDays.length && (task.recurring === 'weekly' || task.recurring === 'biweekly')) {
@@ -274,7 +288,7 @@ const api = {
         const d = new Date(base);
         d.setDate(d.getDate() + offset + bump);
         if (task.recurDays.includes(d.getDay())) {
-          return d.toISOString().split('T')[0];
+          return _localDateStr(d);
         }
       }
     }
@@ -282,25 +296,25 @@ const api = {
     if (task.recurring === 'weekly') {
       const d = new Date(base);
       d.setDate(d.getDate() + 7);
-      return d.toISOString().split('T')[0];
+      return _localDateStr(d);
     }
 
     if (task.recurring === 'biweekly') {
       const d = new Date(base);
       d.setDate(d.getDate() + 14);
-      return d.toISOString().split('T')[0];
+      return _localDateStr(d);
     }
 
     if (task.recurring === 'monthly') {
       const d = new Date(base);
       d.setMonth(d.getMonth() + 1);
-      return d.toISOString().split('T')[0];
+      return _localDateStr(d);
     }
 
     if (task.recurring === 'annually') {
       const d = new Date(base);
       d.setFullYear(d.getFullYear() + 1);
-      return d.toISOString().split('T')[0];
+      return _localDateStr(d);
     }
 
     return null;
@@ -511,7 +525,6 @@ function todayItemHtml(t) {
         <div class="task-title task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</div>
       </div>
       ${dueHtml}
-      <button class="remove-btn drawer-move-btn" onclick="handleMoveToDrawerFromToday(${qid(t.id)})" title="Move to Drawer">${drawerIconSvg}</button>
       <button class="remove-btn" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
     </div>`;
 }
@@ -791,7 +804,6 @@ function renderBacklogItem(t) {
       <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</span>
       ${dateBtn}
       <div class="backlog-actions">
-        <button class="remove-btn drawer-move-btn" onclick="handleMoveToDrawer(${qid(t.id)})" title="Move to Drawer">${drawerIconSvg}</button>
         <button class="remove-btn" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
       </div>
     </div>`;
@@ -911,14 +923,14 @@ function getDefaultDueDate() {
   // Default: 1 week from today
   const d = new Date();
   d.setDate(d.getDate() + 7);
-  return d.toISOString().split('T')[0];
+  return _localDateStr(d);
 }
 
 function getDefaultProjectDueDate() {
   // Default: 30 days from today for projects
   const d = new Date();
   d.setDate(d.getDate() + 30);
-  return d.toISOString().split('T')[0];
+  return _localDateStr(d);
 }
 
 // Legacy alias — schedule popover and other code still calls this
@@ -1298,7 +1310,7 @@ function renderAddModalPills() {
 
   // Date pill — default to today when adding from Today context
   const isTodayCtx = addModalContext === 'today';
-  const defaultDate = isTodayCtx ? new Date().toISOString().split('T')[0] : getDefaultDueDate();
+  const defaultDate = isTodayCtx ? _localDateStr() : getDefaultDueDate();
   const effectiveDate = store.selectedDueDate || defaultDate;
   const dl = formatDueDate(effectiveDate);
   const dateLabel = dl ? dl.text : effectiveDate;
@@ -1516,7 +1528,7 @@ function addModalSubmit(destination) {
   const notes = getModalNotesText().trim();
   const isDrawer = (destination === 'drawer');
   const isToday = (destination === 'today');
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = _localDateStr();
   // When adding to Today, force due date to today (override 1-week default)
   if (isToday && !store.selectedDueDate) {
     store.selectedDueDate = todayStr;
@@ -1565,14 +1577,14 @@ function addModalSubmit(destination) {
     if (slider && parseInt(slider.value) > 0) {
       const minutes = parseInt(slider.value);
       const noteText = note ? note.value.trim() : '';
-      const todayStr = new Date().toISOString().split('T')[0];
-      task.timeSessions.push({ date: todayStr, minutes, note: noteText });
+      const todayStr2 = _localDateStr();
+      task.timeSessions.push({ date: todayStr2, minutes, note: noteText });
     }
   }
 
   // Vote up to Today if that's the destination
   if (destination === 'today') {
-    if (!task.dueDate) task.dueDate = new Date().toISOString().split('T')[0];
+    if (!task.dueDate) task.dueDate = _localDateStr();
     api.voteUp(task.id);
   }
 
@@ -1670,7 +1682,7 @@ function addTaskToToday() {
     input.focus();
     return;
   }
-  const dueDate = store.selectedDueDate || new Date().toISOString().split('T')[0]; // today's date for Today tasks
+  const dueDate = store.selectedDueDate || _localDateStr(); // today's date for Today tasks
   const task = api.addTask(
     title,
     '',
@@ -2370,7 +2382,7 @@ function renderSchedulePopover() {
 
   const now = new Date();
   now.setHours(0, 0, 0, 0);
-  const todayStr = now.toISOString().split('T')[0];
+  const todayStr = _localDateStr(now);
   const selectedDate = task.dueDate || null;
 
   const vy = scheduleViewMonth.year;
@@ -2564,7 +2576,7 @@ function renderSchedulePopover() {
           const d = new Date(today);
           d.setDate(d.getDate() + offset);
           if (days.includes(d.getDay())) {
-            task.dueDate = d.toISOString().split('T')[0];
+            task.dueDate = _localDateStr(d);
             break;
           }
         }
@@ -2876,7 +2888,7 @@ function openNotesSidebar(id, anchorEl) {
   const dayLabels = task.recurDays ? task.recurDays.map(d => dayShort[d]).join(', ') : '';
 
   let pillsHtml = '';
-  // Unified schedule pill
+  // 1. Date pill
   const hasSchedule = due || recurLabel;
   if (hasSchedule) {
     const schedParts = [];
@@ -2887,25 +2899,25 @@ function openNotesSidebar(id, anchorEl) {
     pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date">${calIconSvg} Date</span>`;
   }
 
-  // Checklist pill
-  const hasChecklist = task.notes && /^\[ \] |^\[x\] /m.test(task.notes);
-  pillsHtml += `<span class="notes-card-pill${hasChecklist ? ' active' : ''}" onclick="toggleChecklistLines(${qid(id)})" title="Add checklist">${checkboxIconSvg} List</span>`;
-
-  // Project pill
-  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${qid(id)})" title="Toggle project mode">${projectIconSvg} Project</span>`;
-
-  // Track pill — available on any task
+  // 2. Track pill — available on any task
   const hasTime = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
   pillsHtml += `<span class="notes-card-pill${hasTime ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
 
-  // Contextual pill: "On Deck" for Today tasks, "Category" for Drawer tasks, "Drawer" for non-projects
+  // 3. Project pill
+  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${qid(id)})" title="Toggle project mode">${projectIconSvg} Project</span>`;
+
+  // 4. List pill
+  const hasChecklist = task.notes && /^\[ \] |^\[x\] /m.test(task.notes);
+  pillsHtml += `<span class="notes-card-pill${hasChecklist ? ' active' : ''}" onclick="toggleChecklistLines(${qid(id)})" title="Add checklist">${checkboxIconSvg} List</span>`;
+
+  // 5. Contextual pill: "On Deck" for Today tasks, "Category" for Drawer tasks, "Drawer" for non-projects
   if (task.today) {
     pillsHtml += `<span class="notes-card-pill" onclick="handleRemoveFromToday(${qid(id)}); closeNotesCard(true);" title="Move to On Deck">${onDeckIconSvg} On Deck</span>`;
   } else if (task.drawer) {
     const catLabel = task.drawerCategory && store.drawerCategories[task.drawerCategory]
       ? store.drawerCategories[task.drawerCategory].label : 'Category';
     pillsHtml += `<span class="notes-card-pill${task.drawerCategory ? ' active' : ''}" onclick="openCardCategoryPicker(${qid(id)}, this)" title="Set category">${categoryIconSvg} ${catLabel}</span>`;
-  } else if (!task.isProject) {
+  } else {
     pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} Drawer</span>`;
   }
 
@@ -2927,27 +2939,40 @@ function openNotesSidebar(id, anchorEl) {
     <div class="notes-card-pills">${pillsHtml}</div>
   `;
 
-  // Position card near the task row
-  if (anchorEl) {
+  // Position card near the task row (desktop only — mobile uses bottom-sheet CSS)
+  if (anchorEl && window.innerWidth > 640) {
     const rect = anchorEl.getBoundingClientRect();
     const cardWidth = 420;
+
+    // Append hidden first so we can measure actual card height
+    card.style.visibility = 'hidden';
+    card.style.animation = 'none';
+    document.body.appendChild(card);
+    const cardHeight = card.offsetHeight;
 
     // Horizontal: center on the task row, but keep within viewport
     let left = rect.left + (rect.width / 2) - (cardWidth / 2);
     left = Math.max(8, Math.min(left, window.innerWidth - cardWidth - 8));
 
-    // Vertical: prefer below the task, but flip above if not enough room
+    // Vertical: prefer below the task, flip above if not enough room
     let top = rect.bottom + 6;
-    if (top + 300 > window.innerHeight) {
-      top = rect.top - 6; // will use transform to flip upward
-      card.style.transform = 'translateY(-100%)';
+    let flipped = false;
+    if (top + cardHeight > window.innerHeight - 8) {
+      top = rect.top - 6 - cardHeight;
+      flipped = true;
+      // If flipped above but would go off-screen top, clamp to top
+      if (top < 8) top = 8;
     }
 
     card.style.top = top + 'px';
     card.style.left = left + 'px';
+    card.style.visibility = '';
+    card.style.animation = '';
+    // Use appropriate animation direction
+    card.style.animation = flipped ? 'noteCardInUp 0.15s ease-out' : 'noteCardIn 0.15s ease-out';
+  } else {
+    document.body.appendChild(card);
   }
-
-  document.body.appendChild(card);
   notesCardEl = card;
 
   // On mobile, lock body scroll to prevent background scrolling behind the card
@@ -3106,7 +3131,7 @@ function refreshSidebarMeta() {
   const dayLabels = task.recurDays ? task.recurDays.map(d => dayShort[d]).join(', ') : '';
 
   let pillsHtml = '';
-  // Unified schedule pill
+  // 1. Date pill
   const hasSchedule = due || recurLabel;
   if (hasSchedule) {
     const schedParts = [];
@@ -3117,25 +3142,25 @@ function refreshSidebarMeta() {
     pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date">${calIconSvg} Date</span>`;
   }
 
-  // Checklist pill
-  const hasChecklist2 = task.notes && /^\[ \] |^\[x\] /m.test(task.notes);
-  pillsHtml += `<span class="notes-card-pill${hasChecklist2 ? ' active' : ''}" onclick="toggleChecklistLines(${qid(id)})" title="Add checklist">${checkboxIconSvg} List</span>`;
-
-  // Project pill
-  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${qid(id)})" title="Toggle project mode">${projectIconSvg} Project</span>`;
-
-  // Track pill
+  // 2. Track pill
   const hasTime2 = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
   pillsHtml += `<span class="notes-card-pill${hasTime2 ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
 
-  // Contextual pill: "On Deck" for Today tasks, "Category" for Drawer tasks, "Drawer" for non-projects
+  // 3. Project pill
+  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${qid(id)})" title="Toggle project mode">${projectIconSvg} Project</span>`;
+
+  // 4. List pill
+  const hasChecklist2 = task.notes && /^\[ \] |^\[x\] /m.test(task.notes);
+  pillsHtml += `<span class="notes-card-pill${hasChecklist2 ? ' active' : ''}" onclick="toggleChecklistLines(${qid(id)})" title="Add checklist">${checkboxIconSvg} List</span>`;
+
+  // 5. Contextual pill: "On Deck" for Today tasks, "Category" for Drawer tasks, "Drawer" for non-projects
   if (task.today) {
     pillsHtml += `<span class="notes-card-pill" onclick="handleRemoveFromToday(${qid(id)}); closeNotesCard(true);" title="Move to On Deck">${onDeckIconSvg} On Deck</span>`;
   } else if (task.drawer) {
     const catLabel = task.drawerCategory && store.drawerCategories[task.drawerCategory]
       ? store.drawerCategories[task.drawerCategory].label : 'Category';
     pillsHtml += `<span class="notes-card-pill${task.drawerCategory ? ' active' : ''}" onclick="openCardCategoryPicker(${qid(id)}, this)" title="Set category">${categoryIconSvg} ${catLabel}</span>`;
-  } else if (!task.isProject) {
+  } else {
     pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} Drawer</span>`;
   }
 
@@ -3376,12 +3401,13 @@ function deleteTimeSession(taskId, idx) {
 
 function toggleProjectMode(id) {
   api.toggleProject(id);
-  // Re-open the notes card to show/hide project sections
-  closeNotesCard();
-  openNotesSidebar(id);
   const task = store.tasks.find(t => t.id === id);
   showToast(task && task.isProject ? 'Project mode on' : 'Project mode off');
+  // Render first so the DOM reflects the new section membership,
+  // then reopen the card on the freshly-rendered anchor row
+  closeNotesCard();
   render();
+  openNotesSidebar(id);
 }
 
 function toggleTimeTracking(id) {
@@ -4915,7 +4941,7 @@ function computeHofData() {
       const mon = new Date(monStr + 'T00:00:00');
       const sun = new Date(mon);
       sun.setDate(sun.getDate() + 6);
-      return { start: monStr, end: sun.toISOString().split('T')[0], count, isThisWeek: monStr === thisMondayStr };
+      return { start: monStr, end: _localDateStr(sun), count, isThisWeek: monStr === thisMondayStr };
     })
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
@@ -5026,7 +5052,7 @@ function renderHallOfFame() {
 // Shows once per day on first load if there are On Deck items due today.
 
 function checkDueTodayPopup() {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = _localDateStr();
 
   // Only show once per day
   try {

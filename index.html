@@ -824,6 +824,27 @@ function stopRealtimeSync() {
   }
 }
 
+// ─── DAY CHANGE DETECTION ───
+// Track the current day so we can detect when midnight rolls over
+// and clear creatures / reset UI without a full page reload.
+let _lastKnownDay = typeof _localDateStr === 'function' ? _localDateStr() : new Date().toLocaleDateString('en-CA');
+
+function checkDayChanged() {
+  const today = typeof _localDateStr === 'function' ? _localDateStr() : new Date().toLocaleDateString('en-CA');
+  if (today !== _lastKnownDay) {
+    _lastKnownDay = today;
+    // New day! Clear creatures + reshuffle pool
+    if (typeof clearAllCreatures === 'function') clearAllCreatures();
+    if (typeof shuffleCreaturePool === 'function') shuffleCreaturePool();
+    // Update counter (should be 0 for new day)
+    if (typeof updateCounts === 'function') updateCounts();
+    // Reset the Due Today popup so it can show again
+    try { localStorage.removeItem('tinyape-due-today-shown'); } catch(e) {}
+    return true;
+  }
+  return false;
+}
+
 // ─── CROSS-DEVICE SYNC (visibility change) ───
 document.addEventListener('visibilitychange', async () => {
   if (document.getElementById('appPage').style.display === 'none') return;
@@ -837,18 +858,25 @@ document.addEventListener('visibilitychange', async () => {
   }
 
   if (document.visibilityState === 'visible') {
+    // Check if the day rolled over while backgrounded
+    const dayChanged = checkDayChanged();
+
     // Always do a full refresh + reconnect when tab becomes visible.
     // Mobile browsers kill WebSocket connections while backgrounded,
     // and _realtimeConnected can be stale (Supabase thinks it's connected
     // but the underlying socket is dead).
     const changed = await refreshFromSupabase(true);
     setDate();
-    if (changed) {
+    if (changed || dayChanged) {
       render(); renderHallOfFame();
       // Restore any creature unlocks fetched during refresh
       if (window._pendingCreatureUnlocks && typeof restoreCreaturesFromUnlocks === 'function') {
         restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
         delete window._pendingCreatureUnlocks;
+      }
+      // If day changed, check for new due-today items
+      if (dayChanged && typeof checkDueTodayPopup === 'function') {
+        checkDueTodayPopup();
       }
     }
     // Always tear down and recreate the realtime channel
@@ -875,6 +903,9 @@ function startPeriodicSync() {
     if (document.visibilityState !== 'visible') return;
     if (document.getElementById('appPage').style.display === 'none') return;
 
+    // Check if midnight rolled over
+    const dayChanged = checkDayChanged();
+
     // Flush any failed writes first
     if (window._flushSyncQueue) {
       try { await window._flushSyncQueue(); } catch(e) {}
@@ -882,10 +913,13 @@ function startPeriodicSync() {
 
     // Only do a full refresh if realtime is disconnected or as a safety net
     const changed = await refreshFromSupabase();
-    if (changed) {
+    if (changed || dayChanged) {
       setDate();
       render();
       renderHallOfFame();
+      if (dayChanged && typeof checkDueTodayPopup === 'function') {
+        checkDueTodayPopup();
+      }
     }
   }, 60000);  // 60 seconds — safety net for when realtime drops
 }

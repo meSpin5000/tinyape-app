@@ -2496,6 +2496,10 @@
     from { opacity: 0; transform: translateY(-6px) scale(0.97); }
     to { opacity: 1; transform: translateY(0) scale(1); }
   }
+  @keyframes noteCardInUp {
+    from { opacity: 0; transform: translateY(6px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
   .notes-card-header {
     display: flex;
     align-items: center;
@@ -3433,7 +3437,6 @@
     }
     /* Hide action buttons on mobile — clean main view */
     .remove-btn { display: none; }
-    .drawer-move-btn { display: none; }
     .notes-drawer-pill { display: inline-flex; }
     .copy-btn { display: none; }
     /* Drawer items now use .backlog-actions via .backlog-item */
