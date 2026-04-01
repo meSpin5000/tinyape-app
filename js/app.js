@@ -2466,13 +2466,21 @@ function renderSchedulePopover() {
   // Wire up events
   pop.querySelector('#schedClose').addEventListener('click', closeSchedulePopover);
 
-  // Calendar day clicks — set date and auto-close
+  // Calendar day clicks — auto-close ONLY if no repeat is set;
+  // otherwise keep popover open so user can adjust repeat settings before OK.
   pop.querySelectorAll('.sched-day:not(.empty):not(.past)').forEach(btn => {
     btn.addEventListener('click', () => {
       task.dueDate = btn.dataset.date;
       const isAddTask = schedulePopoverTaskId === -1;
       const todayStr = _localDateStr();
       const isToday = btn.dataset.date === todayStr;
+
+      // If task has recurrence, stay open — user might adjust repeat options
+      if (task.recurring) {
+        renderSchedulePopover();
+        return;
+      }
+
       closeSchedulePopover();
       if (isAddTask) {
         // Auto-vote-up: if user picks today's date, submit to Today section
@@ -2490,6 +2498,8 @@ function renderSchedulePopover() {
           api.voteUp(task.id);
           showToast('Moved to Today');
         }
+        // Persist date change to DB
+        if (window._syncSaveTask) window._syncSaveTask(task);
         render();
         if (currentNotesTaskId === task.id) refreshSidebarMeta();
       }
@@ -2538,6 +2548,11 @@ function renderSchedulePopover() {
   repeatCheck.addEventListener('change', () => {
     if (repeatCheck.checked) {
       task.recurring = task.recurring || 'weekly';
+      // Auto-select the day-of-week from the due date so the pattern is anchored
+      if (task.dueDate && (task.recurring === 'weekly' || task.recurring === 'biweekly') && (!task.recurDays || !task.recurDays.length)) {
+        const dow = new Date(task.dueDate + 'T00:00:00').getDay();
+        task.recurDays = [dow];
+      }
     } else {
       task.recurring = null;
       task.recurDays = null;
@@ -2589,7 +2604,10 @@ function renderSchedulePopover() {
     task.dueDate = null;
     task.recurring = null;
     task.recurDays = null;
+    const isAddTask = schedulePopoverTaskId === -1;
     closeSchedulePopover();
+    // Persist clear to DB
+    if (!isAddTask && window._syncSaveTask) window._syncSaveTask(task);
     render();
     if (currentNotesTaskId === task.id) refreshSidebarMeta();
     showToast('Date cleared');
@@ -2600,6 +2618,13 @@ function renderSchedulePopover() {
     // If recurring is set but no date, auto-calculate next date
     if (task.recurring && !task.dueDate) {
       task.dueDate = api._getNextRecurDate(task);
+    }
+    // Auto-populate recurDays for weekly/biweekly if not explicitly set.
+    // This anchors the recurrence to a specific day-of-week so that
+    // pushing the date forward doesn't drift the recurring pattern.
+    if (task.dueDate && (task.recurring === 'weekly' || task.recurring === 'biweekly') && (!task.recurDays || !task.recurDays.length)) {
+      const dow = new Date(task.dueDate + 'T00:00:00').getDay();
+      task.recurDays = [dow];
     }
     const todayStr = _localDateStr();
     const isToday = task.dueDate === todayStr;
@@ -2623,6 +2648,8 @@ function renderSchedulePopover() {
       api.voteUp(task.id);
       showToast('Moved to Today');
     }
+    // Persist date/recurring changes to DB
+    if (!isAddTask && window._syncSaveTask) window._syncSaveTask(task);
     render();
     if (currentNotesTaskId === task.id) refreshSidebarMeta();
     const parts = [];
@@ -3716,6 +3743,7 @@ function cardClearSchedule(id) {
   task.dueDate = null;
   task.recurring = null;
   task.recurDays = null;
+  if (window._syncSaveTask) window._syncSaveTask(task);
   render();
   refreshSidebarMeta();
   showToast('Date cleared');

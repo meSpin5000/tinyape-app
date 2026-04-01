@@ -3194,7 +3194,7 @@
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 14px;
+    font-size: 18px;
     padding: 2px 6px;
     border-radius: 4px;
     transition: all var(--transition);
@@ -3228,8 +3228,8 @@
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 14px;
-    padding: 2px 6px;
+    font-size: 18px;
+    padding: 4px 8px;
     border-radius: 4px;
     transition: all var(--transition);
   }
@@ -3716,6 +3716,16 @@
       box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
       border-top: 1px solid var(--border);
       padding: 18px 16px;
+    }
+    .schedule-popover .popover-close {
+      font-size: 22px;
+      padding: 6px 8px;
+      top: 10px;
+      right: 10px;
+    }
+    .schedule-popover .sched-month-nav {
+      font-size: 22px;
+      padding: 6px 10px;
     }
 
     /* Due Today popup — bottom sheet on mobile */
