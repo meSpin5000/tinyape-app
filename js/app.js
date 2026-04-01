@@ -2477,6 +2477,8 @@ function renderSchedulePopover() {
 
       // If task has recurrence, stay open — user might adjust repeat options
       if (task.recurring) {
+        // Persist immediately so sync can't overwrite mid-edit
+        if (!isAddTask && window._syncSaveTask) window._syncSaveTask(task);
         renderSchedulePopover();
         return;
       }
@@ -2544,6 +2546,7 @@ function renderSchedulePopover() {
   }
 
   // Repeat toggle
+  const isAddTask = schedulePopoverTaskId === -1;
   const repeatCheck = pop.querySelector('#schedRepeatCheck');
   repeatCheck.addEventListener('change', () => {
     if (repeatCheck.checked) {
@@ -2557,6 +2560,8 @@ function renderSchedulePopover() {
       task.recurring = null;
       task.recurDays = null;
     }
+    // Persist immediately so sync can't overwrite mid-edit
+    if (!isAddTask && window._syncSaveTask) window._syncSaveTask(task);
     renderSchedulePopover();
   });
 
@@ -2568,6 +2573,8 @@ function renderSchedulePopover() {
       if (btn.dataset.freq === 'monthly' || btn.dataset.freq === 'annually') {
         task.recurDays = null;
       }
+      // Persist immediately so sync can't overwrite mid-edit
+      if (!isAddTask && window._syncSaveTask) window._syncSaveTask(task);
       renderSchedulePopover();
     });
   });
@@ -2596,6 +2603,8 @@ function renderSchedulePopover() {
           }
         }
       }
+      // Persist immediately so sync can't overwrite mid-edit
+      if (!isAddTask && window._syncSaveTask) window._syncSaveTask(task);
       renderSchedulePopover();
     });
   });
