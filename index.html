@@ -556,21 +556,14 @@ async function refreshFromSupabase(force) {
 
       // Helper: check if a task should be protected from DB overwrite
       function _isProtected(id) {
-        const echoHit = window._isEcho && window._isEcho(id);
-        const schedHit = typeof schedulePopoverTaskId !== 'undefined' && schedulePopoverTaskId !== null && id === schedulePopoverTaskId;
-        const notesHit = typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null && id === currentNotesTaskId;
-        if (echoHit || schedHit || notesHit) {
-          console.log('[Sync:PROTECTED]', id, 'echo:', echoHit, 'sched:', schedHit, 'notes:', notesHit);
-          return true;
-        }
+        if (window._isEcho && window._isEcho(id)) return true;
+        if (typeof schedulePopoverTaskId !== 'undefined' && schedulePopoverTaskId !== null && id === schedulePopoverTaskId) return true;
+        if (typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null && id === currentNotesTaskId) return true;
         return false;
       }
 
       // Merge fields from DB onto an existing local task object (in-place)
       function _mergeTask(local, db) {
-        if (local.dueDate !== db.dueDate || local.recurring !== db.recurring) {
-          console.log('[Sync:MERGE]', local.title, '— local dueDate:', local.dueDate, '→ db:', db.dueDate, '| local recurring:', local.recurring, '→ db:', db.recurring);
-        }
         // Preserve timeSessions — they're in a separate table and won't be in DB task payload
         const localSessions = local.timeSessions;
         // Copy all DB fields onto the existing object (preserves object identity)
@@ -761,7 +754,7 @@ function startRealtimeSync() {
     // Don't overwrite a task the user is actively editing
     if (typeof currentNotesTaskId !== 'undefined' && row.id === currentNotesTaskId) return;
     if (typeof schedulePopoverTaskId !== 'undefined' && schedulePopoverTaskId !== null && row.id === schedulePopoverTaskId) return;
-    console.log('[Realtime] Task UPDATE:', row.title, 'killed:', row.killed, 'drawer:', row.drawer, 'due_date:', row.due_date, 'recurring:', row.recurring, 'recur_days:', row.recur_days);
+    console.log('[Realtime] Task UPDATE:', row.title, 'killed:', row.killed, 'drawer:', row.drawer);
     const jsTask = TinyApeDB._mapDbTaskToJs(row);
     const idx = store.tasks.findIndex(t => t.id === row.id);
     const kIdx = store.killedTasks.findIndex(t => t.id === row.id);

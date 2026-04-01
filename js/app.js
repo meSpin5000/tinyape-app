@@ -2379,7 +2379,6 @@ function renderSchedulePopover() {
   const pop = schedulePopover.element;
   const task = schedulePopoverTaskId === -1 ? addTaskSchedProxy : store.tasks.find(t => t.id === schedulePopoverTaskId);
   if (!task) return;
-  console.log('[SchedDebug] renderSchedulePopover — task.dueDate:', task.dueDate, 'recurring:', task.recurring, 'recurDays:', task.recurDays);
   // Helper: always re-fetch from store to avoid stale closures
   // (refreshFromSupabase replaces store.tasks with new object references)
   function _task() {
@@ -2478,7 +2477,6 @@ function renderSchedulePopover() {
   pop.querySelectorAll('.sched-day:not(.empty):not(.past)').forEach(btn => {
     btn.addEventListener('click', () => {
       const t = _task(); if (!t) return;
-      console.log('[SchedDebug] Day clicked:', btn.dataset.date, 'task:', t.id, 'old dueDate:', t.dueDate, 'recurring:', t.recurring);
       t.dueDate = btn.dataset.date;
       const todayStr = _localDateStr();
       const isToday = btn.dataset.date === todayStr;
