@@ -2679,8 +2679,16 @@ function closeSchedulePopover() {
 
 function handleScheduleOutside(e) {
   if (schedulePopover && !schedulePopover.element.contains(e.target)) {
+    // Persist any date/recurring changes made while popover was open
+    const taskId = schedulePopoverTaskId;
+    if (taskId && taskId !== -1) {
+      const task = store.tasks.find(t => t.id === taskId);
+      if (task && window._syncSaveTask) window._syncSaveTask(task);
+    }
     closeSchedulePopover();
     render();
+    // Update the notes card Date pill if it's open for this task
+    if (taskId && currentNotesTaskId === taskId) refreshSidebarMeta();
   }
 }
 
