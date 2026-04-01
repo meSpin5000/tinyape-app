@@ -541,69 +541,111 @@ async function refreshFromSupabase(force) {
     }
 
     if (data) {
-      const localOnlyTasks = store.tasks.filter(t => typeof t.id === 'number');
+      // ─── MERGE-BASED REFRESH ───
+      // Instead of replacing store.tasks (which orphans object references held by
+      // closures in the schedule popover, notes card, etc.), we MERGE DB data onto
+      // existing objects. This preserves object identity so closures never go stale,
+      // and eliminates the need for field-by-field localSnap restoration.
 
-      // Snapshot local state of recently-written tasks so stale DB reads
-      // don't revert flags during the echo window. Cover BOTH active and killed.
-      const localSnap = new Map();     // id -> { drawer, today, todayOrder, done, drawerCategory }
-      const localKilled = new Set();   // ids of tasks killed locally within echo window
-      if (window._isEcho) {
-        store.tasks.forEach(t => {
-          if (window._isEcho(t.id)) {
-            localSnap.set(String(t.id), { drawer: t.drawer, today: t.today, todayOrder: t.todayOrder, done: t.done, drawerCategory: t.drawerCategory });
-          }
-        });
-        store.killedTasks.forEach(t => {
-          if (window._isEcho(t.id)) {
-            localKilled.add(String(t.id));
-          }
-        });
+      const dbTasks = data.tasks || [];
+      const dbKilled = data.killedTasks || [];
+      const dbTaskMap = new Map();       // id -> DB task object
+      const dbKilledMap = new Map();     // id -> DB killed task object
+      dbTasks.forEach(t => dbTaskMap.set(String(t.id), t));
+      dbKilled.forEach(t => dbKilledMap.set(String(t.id), t));
+
+      // Helper: check if a task should be protected from DB overwrite
+      function _isProtected(id) {
+        if (window._isEcho && window._isEcho(id)) return true;
+        if (typeof schedulePopoverTaskId !== 'undefined' && schedulePopoverTaskId !== null && id === schedulePopoverTaskId) return true;
+        if (typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null && id === currentNotesTaskId) return true;
+        return false;
       }
 
-      store.tasks = data.tasks || [];
-      store.killedTasks = data.killedTasks || [];
-      // Diagnostic: log drawer tasks from DB to track resurrections
-      const drawerFromDb = data.tasks ? data.tasks.filter(t => t.drawer) : [];
-      if (drawerFromDb.length > 0) {
-        console.log('[Sync:REFRESH] Drawer tasks from DB:', drawerFromDb.map(t => `${t.title} (killed:${t.killed})`));
+      // Merge fields from DB onto an existing local task object (in-place)
+      function _mergeTask(local, db) {
+        // Preserve timeSessions — they're in a separate table and won't be in DB task payload
+        const localSessions = local.timeSessions;
+        // Copy all DB fields onto the existing object (preserves object identity)
+        Object.keys(db).forEach(k => { local[k] = db[k]; });
+        // Restore timeSessions if DB didn't have them
+        if (localSessions && localSessions.length && (!local.timeSessions || !local.timeSessions.length)) {
+          local.timeSessions = localSessions;
+        }
       }
 
-      // Re-apply local state for in-flight writes (prevents stale DB overwrite)
-      if (localSnap.size > 0) {
-        store.tasks.forEach(t => {
-          const snap = localSnap.get(String(t.id));
-          if (snap) Object.assign(t, snap);
-        });
-      }
+      // 1. Update existing active tasks + handle killed tasks from DB
+      const activeIds = new Set();
+      store.tasks = store.tasks.filter(local => {
+        const sid = String(local.id);
+        // Local-only tasks (numeric IDs not yet in DB) — keep as-is
+        if (typeof local.id === 'number') return true;
 
-      // Protect recently-killed tasks: if DB hasn't caught up yet,
-      // the task may still be in data.tasks as non-killed. Move it back.
-      if (localKilled.size > 0) {
-        const toMove = [];
-        store.tasks = store.tasks.filter(t => {
-          if (localKilled.has(String(t.id))) {
-            toMove.push(t);
-            return false;
-          }
+        const dbVersion = dbTaskMap.get(sid);
+        const dbKilledVersion = dbKilledMap.get(sid);
+
+        if (_isProtected(local.id)) {
+          // Protected: keep local state, just mark as seen
+          activeIds.add(sid);
           return true;
-        });
-        toMove.forEach(t => {
-          if (!store.killedTasks.some(k => k.id === t.id)) {
-            store.killedTasks.push({ ...t, killed: true, killedAt: t.killedAt || new Date().toISOString() });
-          }
-        });
-      }
+        }
 
-      // Re-add local-only tasks not yet in DB
-      if (localOnlyTasks.length > 0) {
-        localOnlyTasks.forEach(localTask => {
-          const alreadyInDb = store.tasks.some(t =>
-            t._localId === localTask.id ||
-            (t.title === localTask.title && t.today === localTask.today && t.done === localTask.done)
-          );
-          if (!alreadyInDb) store.tasks.push(localTask);
-        });
-      }
+        if (dbKilledVersion) {
+          // Task was killed on another device — move to killed list
+          _mergeTask(local, dbKilledVersion);
+          if (!store.killedTasks.some(k => String(k.id) === sid)) {
+            store.killedTasks.push(local);
+          }
+          return false; // remove from active
+        }
+
+        if (dbVersion) {
+          // Normal merge
+          _mergeTask(local, dbVersion);
+          activeIds.add(sid);
+          return true;
+        }
+
+        // Task exists locally but not in DB — deleted on another device
+        return false;
+      });
+
+      // 2. Add new tasks from DB that aren't in local store yet
+      dbTasks.forEach(dbTask => {
+        const sid = String(dbTask.id);
+        if (!activeIds.has(sid) && !store.tasks.some(t => String(t.id) === sid)) {
+          store.tasks.push(dbTask);
+        }
+      });
+
+      // 3. Update killed tasks similarly
+      const killedIds = new Set();
+      store.killedTasks.forEach(local => {
+        const sid = String(local.id);
+        if (_isProtected(local.id)) { killedIds.add(sid); return; }
+        const dbVersion = dbKilledMap.get(sid);
+        const dbActiveVersion = dbTaskMap.get(sid);
+        if (dbActiveVersion && !dbActiveVersion.killed) {
+          // Task was restored on another device — move back to active
+          _mergeTask(local, dbActiveVersion);
+          store.tasks.push(local);
+          local._removeFromKilled = true;
+          return;
+        }
+        if (dbVersion) {
+          _mergeTask(local, dbVersion);
+        }
+        killedIds.add(sid);
+      });
+      store.killedTasks = store.killedTasks.filter(t => !t._removeFromKilled);
+
+      // 4. Add new killed tasks from DB
+      dbKilled.forEach(dbTask => {
+        const sid = String(dbTask.id);
+        if (!killedIds.has(sid) && !store.killedTasks.some(t => String(t.id) === sid)) {
+          store.killedTasks.push(dbTask);
+        }
+      });
 
       // Drawer categories
       if (data.drawerCategories && typeof data.drawerCategories === 'object') {
@@ -711,31 +753,45 @@ function startRealtimeSync() {
     if (window._isEcho && window._isEcho(row.id)) return;
     // Don't overwrite a task the user is actively editing
     if (typeof currentNotesTaskId !== 'undefined' && row.id === currentNotesTaskId) return;
+    if (typeof schedulePopoverTaskId !== 'undefined' && schedulePopoverTaskId !== null && row.id === schedulePopoverTaskId) return;
     console.log('[Realtime] Task UPDATE:', row.title, 'killed:', row.killed, 'drawer:', row.drawer);
     const jsTask = TinyApeDB._mapDbTaskToJs(row);
     const idx = store.tasks.findIndex(t => t.id === row.id);
     const kIdx = store.killedTasks.findIndex(t => t.id === row.id);
+    const existing = idx !== -1 ? store.tasks[idx] : (kIdx !== -1 ? store.killedTasks[kIdx] : null);
 
-    // Preserve local timeSessions — they live in a separate table and
-    // won't be present on Realtime task row payloads
-    const localTask = idx !== -1 ? store.tasks[idx] : (kIdx !== -1 ? store.killedTasks[kIdx] : null);
-    if (localTask && localTask.timeSessions && localTask.timeSessions.length && (!jsTask.timeSessions || !jsTask.timeSessions.length)) {
-      jsTask.timeSessions = localTask.timeSessions;
+    // Preserve local timeSessions — they live in a separate table
+    if (existing && existing.timeSessions && existing.timeSessions.length && (!jsTask.timeSessions || !jsTask.timeSessions.length)) {
+      jsTask.timeSessions = existing.timeSessions;
     }
 
     if (row.killed) {
-      // Task was killed — move from active to killed
-      if (idx !== -1) store.tasks.splice(idx, 1);
-      if (kIdx !== -1) { store.killedTasks[kIdx] = jsTask; }
-      else { store.killedTasks.push(jsTask); }
-    } else {
-      // Task is active — move from killed to active if needed
-      if (kIdx !== -1) {
-        console.warn('[Realtime] ⚠️ RESURRECTING killed task:', row.title, 'killed:', row.killed, 'drawer:', row.drawer);
+      // Task was killed — merge onto existing or add to killed list
+      if (idx !== -1) {
+        // Merge onto existing object to preserve references, then move to killed
+        Object.keys(jsTask).forEach(k => { store.tasks[idx][k] = jsTask[k]; });
+        store.killedTasks.push(store.tasks[idx]);
+        store.tasks.splice(idx, 1);
+      } else if (kIdx !== -1) {
+        // Already in killed — merge in place
+        Object.keys(jsTask).forEach(k => { store.killedTasks[kIdx][k] = jsTask[k]; });
+      } else {
+        store.killedTasks.push(jsTask);
       }
-      if (kIdx !== -1) store.killedTasks.splice(kIdx, 1);
-      if (idx !== -1) { store.tasks[idx] = jsTask; }
-      else { store.tasks.push(jsTask); }
+    } else {
+      // Task is active
+      if (kIdx !== -1) {
+        console.warn('[Realtime] ⚠️ RESURRECTING killed task:', row.title);
+        // Merge onto existing killed object, then move to active
+        Object.keys(jsTask).forEach(k => { store.killedTasks[kIdx][k] = jsTask[k]; });
+        store.tasks.push(store.killedTasks[kIdx]);
+        store.killedTasks.splice(kIdx, 1);
+      } else if (idx !== -1) {
+        // Merge onto existing object (preserves closure references)
+        Object.keys(jsTask).forEach(k => { store.tasks[idx][k] = jsTask[k]; });
+      } else {
+        store.tasks.push(jsTask);
+      }
     }
     render();
     renderHallOfFame();

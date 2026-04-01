@@ -2379,6 +2379,11 @@ function renderSchedulePopover() {
   const pop = schedulePopover.element;
   const task = schedulePopoverTaskId === -1 ? addTaskSchedProxy : store.tasks.find(t => t.id === schedulePopoverTaskId);
   if (!task) return;
+  // Helper: always re-fetch from store to avoid stale closures
+  // (refreshFromSupabase replaces store.tasks with new object references)
+  function _task() {
+    return schedulePopoverTaskId === -1 ? addTaskSchedProxy : store.tasks.find(t => t.id === schedulePopoverTaskId);
+  }
 
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -2464,25 +2469,27 @@ function renderSchedulePopover() {
     ${bottomHtml}`;
 
   // Wire up events
+  const isAddTask = schedulePopoverTaskId === -1;
   pop.querySelector('#schedClose').addEventListener('click', closeSchedulePopover);
 
   // Calendar day clicks — auto-close ONLY if no repeat is set;
   // otherwise keep popover open so user can adjust repeat settings before OK.
   pop.querySelectorAll('.sched-day:not(.empty):not(.past)').forEach(btn => {
     btn.addEventListener('click', () => {
-      task.dueDate = btn.dataset.date;
-      const isAddTask = schedulePopoverTaskId === -1;
+      const t = _task(); if (!t) return;
+      t.dueDate = btn.dataset.date;
       const todayStr = _localDateStr();
       const isToday = btn.dataset.date === todayStr;
 
       // If task has recurrence, stay open — user might adjust repeat options
-      if (task.recurring) {
+      if (t.recurring) {
         // Persist immediately so sync can't overwrite mid-edit
-        if (!isAddTask && window._syncSaveTask) window._syncSaveTask(task);
+        if (!isAddTask && window._syncSaveTask) window._syncSaveTask(t);
         renderSchedulePopover();
         return;
       }
 
+      const taskId = t.id;
       closeSchedulePopover();
       if (isAddTask) {
         // Auto-vote-up: if user picks today's date, submit to Today section
@@ -2496,14 +2503,14 @@ function renderSchedulePopover() {
         renderAddModalPills();
       } else {
         // Existing task: auto-vote-up to Today if today's date selected
-        if (isToday && !task.today) {
-          api.voteUp(task.id);
+        if (isToday && !t.today) {
+          api.voteUp(t.id);
           showToast('Moved to Today');
         }
         // Persist date change to DB
-        if (window._syncSaveTask) window._syncSaveTask(task);
+        if (window._syncSaveTask) window._syncSaveTask(t);
         render();
-        if (currentNotesTaskId === task.id) refreshSidebarMeta();
+        if (currentNotesTaskId === taskId) refreshSidebarMeta();
       }
     });
   });
@@ -2535,8 +2542,9 @@ function renderSchedulePopover() {
   const fullInput = pop.querySelector('#schedFullDateInput');
   if (fullInput) {
     fullInput.addEventListener('change', () => {
+      const t = _task(); if (!t) return;
       if (fullInput.value) {
-        task.dueDate = fullInput.value;
+        t.dueDate = fullInput.value;
         const d = new Date(fullInput.value + 'T00:00:00');
         scheduleViewMonth = { year: d.getFullYear(), month: d.getMonth() };
         scheduleShowFullDate = false;
@@ -2546,35 +2554,36 @@ function renderSchedulePopover() {
   }
 
   // Repeat toggle
-  const isAddTask = schedulePopoverTaskId === -1;
   const repeatCheck = pop.querySelector('#schedRepeatCheck');
   repeatCheck.addEventListener('change', () => {
+    const t = _task(); if (!t) return;
     if (repeatCheck.checked) {
-      task.recurring = task.recurring || 'weekly';
+      t.recurring = t.recurring || 'weekly';
       // Auto-select the day-of-week from the due date so the pattern is anchored
-      if (task.dueDate && (task.recurring === 'weekly' || task.recurring === 'biweekly') && (!task.recurDays || !task.recurDays.length)) {
-        const dow = new Date(task.dueDate + 'T00:00:00').getDay();
-        task.recurDays = [dow];
+      if (t.dueDate && (t.recurring === 'weekly' || t.recurring === 'biweekly') && (!t.recurDays || !t.recurDays.length)) {
+        const dow = new Date(t.dueDate + 'T00:00:00').getDay();
+        t.recurDays = [dow];
       }
     } else {
-      task.recurring = null;
-      task.recurDays = null;
+      t.recurring = null;
+      t.recurDays = null;
     }
     // Persist immediately so sync can't overwrite mid-edit
-    if (!isAddTask && window._syncSaveTask) window._syncSaveTask(task);
+    if (!isAddTask && window._syncSaveTask) window._syncSaveTask(t);
     renderSchedulePopover();
   });
 
   // Freq buttons
   pop.querySelectorAll('.recur-freq').forEach(btn => {
     btn.addEventListener('click', () => {
-      task.recurring = btn.dataset.freq;
+      const t = _task(); if (!t) return;
+      t.recurring = btn.dataset.freq;
       // If switching to monthly/annually, clear day selections
       if (btn.dataset.freq === 'monthly' || btn.dataset.freq === 'annually') {
-        task.recurDays = null;
+        t.recurDays = null;
       }
       // Persist immediately so sync can't overwrite mid-edit
-      if (!isAddTask && window._syncSaveTask) window._syncSaveTask(task);
+      if (!isAddTask && window._syncSaveTask) window._syncSaveTask(t);
       renderSchedulePopover();
     });
   });
@@ -2582,63 +2591,65 @@ function renderSchedulePopover() {
   // Day pills
   pop.querySelectorAll('.recur-day').forEach(btn => {
     btn.addEventListener('click', () => {
+      const t = _task(); if (!t) return;
       const day = parseInt(btn.dataset.day);
-      let days = task.recurDays ? [...task.recurDays] : [];
+      let days = t.recurDays ? [...t.recurDays] : [];
       if (days.includes(day)) {
         days = days.filter(d => d !== day);
       } else {
         days.push(day);
         days.sort();
       }
-      task.recurDays = days.length ? days : null;
+      t.recurDays = days.length ? days : null;
       // Auto-set date to next occurrence of selected day if no date yet
-      if (days.length && !task.dueDate) {
+      if (days.length && !t.dueDate) {
         const today = new Date(); today.setHours(0,0,0,0);
         for (let offset = 0; offset <= 7; offset++) {
           const d = new Date(today);
           d.setDate(d.getDate() + offset);
           if (days.includes(d.getDay())) {
-            task.dueDate = _localDateStr(d);
+            t.dueDate = _localDateStr(d);
             break;
           }
         }
       }
       // Persist immediately so sync can't overwrite mid-edit
-      if (!isAddTask && window._syncSaveTask) window._syncSaveTask(task);
+      if (!isAddTask && window._syncSaveTask) window._syncSaveTask(t);
       renderSchedulePopover();
     });
   });
 
   pop.querySelector('#schedClear').addEventListener('click', () => {
-    task.dueDate = null;
-    task.recurring = null;
-    task.recurDays = null;
-    const isAddTask = schedulePopoverTaskId === -1;
+    const t = _task(); if (!t) return;
+    t.dueDate = null;
+    t.recurring = null;
+    t.recurDays = null;
+    const taskId = t.id;
     closeSchedulePopover();
     // Persist clear to DB
-    if (!isAddTask && window._syncSaveTask) window._syncSaveTask(task);
+    if (!isAddTask && window._syncSaveTask) window._syncSaveTask(t);
     render();
-    if (currentNotesTaskId === task.id) refreshSidebarMeta();
+    if (currentNotesTaskId === taskId) refreshSidebarMeta();
     showToast('Date cleared');
   });
 
   // OK
   pop.querySelector('#schedOk').addEventListener('click', () => {
+    const t = _task(); if (!t) return;
     // If recurring is set but no date, auto-calculate next date
-    if (task.recurring && !task.dueDate) {
-      task.dueDate = api._getNextRecurDate(task);
+    if (t.recurring && !t.dueDate) {
+      t.dueDate = api._getNextRecurDate(t);
     }
     // Auto-populate recurDays for weekly/biweekly if not explicitly set.
     // This anchors the recurrence to a specific day-of-week so that
     // pushing the date forward doesn't drift the recurring pattern.
-    if (task.dueDate && (task.recurring === 'weekly' || task.recurring === 'biweekly') && (!task.recurDays || !task.recurDays.length)) {
-      const dow = new Date(task.dueDate + 'T00:00:00').getDay();
-      task.recurDays = [dow];
+    if (t.dueDate && (t.recurring === 'weekly' || t.recurring === 'biweekly') && (!t.recurDays || !t.recurDays.length)) {
+      const dow = new Date(t.dueDate + 'T00:00:00').getDay();
+      t.recurDays = [dow];
     }
     const todayStr = _localDateStr();
-    const isToday = task.dueDate === todayStr;
-    // If this is the add-task popover and there's text, auto-add the task
-    const isAddTask = schedulePopoverTaskId === -1;
+    const isToday = t.dueDate === todayStr;
+    const taskId = t.id;
     closeSchedulePopover();
     if (isAddTask) {
       const input = document.getElementById('addTaskInput');
@@ -2653,17 +2664,17 @@ function renderSchedulePopover() {
       }
     }
     // Existing task: auto-vote-up if date is today
-    if (isToday && !task.today) {
-      api.voteUp(task.id);
+    if (isToday && !t.today) {
+      api.voteUp(t.id);
       showToast('Moved to Today');
     }
     // Persist date/recurring changes to DB
-    if (!isAddTask && window._syncSaveTask) window._syncSaveTask(task);
+    if (!isAddTask && window._syncSaveTask) window._syncSaveTask(t);
     render();
-    if (currentNotesTaskId === task.id) refreshSidebarMeta();
+    if (currentNotesTaskId === taskId) refreshSidebarMeta();
     const parts = [];
-    if (task.dueDate) parts.push('Date set');
-    if (task.recurring) parts.push('Repeats ' + task.recurring);
+    if (t.dueDate) parts.push('Date set');
+    if (t.recurring) parts.push('Repeats ' + t.recurring);
     showToast(parts.length ? parts.join(' · ') : 'No changes');
   });
 }
@@ -3033,17 +3044,17 @@ function openNotesSidebar(id, anchorEl) {
     if (e.key === 'Escape') { e.preventDefault(); titleEl.blur(); }
   });
   titleEl.addEventListener('blur', () => {
+    // Re-fetch task to avoid stale closure reference
+    const t = store.tasks.find(x => x.id === currentNotesTaskId);
+    if (!t) return;
     const newTitle = titleEl.textContent.trim();
-    if (newTitle && newTitle !== task.title) {
-      task.title = newTitle;
+    if (newTitle && newTitle !== t.title) {
+      t.title = newTitle;
       render();
-      // Persist to Supabase via sync layer
-      if (window.TinyApeDB) {
-        window.TinyApeDB.saveTask(task).catch(err =>
-          console.error('Sync error (title edit):', err));
-      }
+      // Persist via unified sync path (with echo suppression)
+      if (window._syncSaveTask) window._syncSaveTask(t);
     } else if (!newTitle) {
-      titleEl.textContent = task.title; // revert if empty
+      titleEl.textContent = t.title; // revert if empty
     }
   });
   // Prevent paste from inserting rich text
@@ -3770,6 +3781,7 @@ function cardClearDate(id) {
   const task = store.tasks.find(t => t.id === id);
   if (!task) return;
   task.dueDate = null;
+  if (window._syncSaveTask) window._syncSaveTask(task);
   render();
   refreshSidebarMeta();
   showToast('Date removed');
@@ -3780,6 +3792,7 @@ function cardClearRecur(id) {
   if (!task) return;
   task.recurring = null;
   task.recurDays = null;
+  if (window._syncSaveTask) window._syncSaveTask(task);
   render();
   refreshSidebarMeta();
   showToast('Recurring removed');
