@@ -267,53 +267,56 @@ const api = {
   _getNextRecurDate(task) {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    // Start from whichever is later: today or the task's current due date
-    // This ensures we always advance PAST the current occurrence
-    let base = new Date(now);
-    if (task.dueDate) {
-      const taskDue = new Date(task.dueDate + 'T00:00:00');
-      if (taskDue >= now) base = new Date(taskDue);
-    }
+    // Start from the task's due date (to preserve the recurring anchor),
+    // then advance by the recurrence interval until we land in the future.
+    // If no due date, start from today.
+    let base = task.dueDate ? new Date(task.dueDate + 'T00:00:00') : new Date(now);
 
     if (task.recurring === 'daily') {
       const d = new Date(base);
       d.setDate(d.getDate() + 1);
+      // If still in the past, jump to tomorrow
+      if (d < now) { d.setTime(now.getTime()); d.setDate(d.getDate() + 1); }
       return _localDateStr(d);
     }
 
     if (task.recurDays && task.recurDays.length && (task.recurring === 'weekly' || task.recurring === 'biweekly')) {
-      // Find next matching day of week AFTER base
-      const bump = task.recurring === 'biweekly' ? 7 : 0;
-      for (let offset = 1; offset <= 21; offset++) {
-        const d = new Date(base);
-        d.setDate(d.getDate() + offset + bump);
-        if (task.recurDays.includes(d.getDay())) {
-          return _localDateStr(d);
+      // Start from one day after base, scan forward for the next matching day-of-week
+      // that's also in the future. Cap at 365 days to prevent infinite loops.
+      const d = new Date(base);
+      d.setDate(d.getDate() + 1); // advance past current due date
+      // If still in the past, jump to today first
+      if (d < now) d.setTime(now.getTime());
+      for (let offset = 0; offset < 365; offset++) {
+        const check = new Date(d);
+        check.setDate(check.getDate() + offset);
+        if (task.recurDays.includes(check.getDay()) && check > now) {
+          return _localDateStr(check);
         }
       }
     }
 
     if (task.recurring === 'weekly') {
       const d = new Date(base);
-      d.setDate(d.getDate() + 7);
+      while (d <= now) { d.setDate(d.getDate() + 7); }
       return _localDateStr(d);
     }
 
     if (task.recurring === 'biweekly') {
       const d = new Date(base);
-      d.setDate(d.getDate() + 14);
+      while (d <= now) { d.setDate(d.getDate() + 14); }
       return _localDateStr(d);
     }
 
     if (task.recurring === 'monthly') {
       const d = new Date(base);
-      d.setMonth(d.getMonth() + 1);
+      while (d <= now) { d.setMonth(d.getMonth() + 1); }
       return _localDateStr(d);
     }
 
     if (task.recurring === 'annually') {
       const d = new Date(base);
-      d.setFullYear(d.getFullYear() + 1);
+      while (d <= now) { d.setFullYear(d.getFullYear() + 1); }
       return _localDateStr(d);
     }
 
@@ -427,24 +430,36 @@ function initSwipeToDelete() {
     row.parentNode.insertBefore(wrap, row);
     wrap.appendChild(row);
 
-    let startX = 0, currentX = 0, swiping = false, swipeDir = null;
+    let startX = 0, startY = 0, currentX = 0, swiping = false, scrolling = false, swipeDir = null;
     const THRESHOLD = 70;
+    const SWIPE_ACTIVATE = 20; // px horizontal before swipe engages
+    const SCROLL_LOCK = 10;   // px vertical before locking to scroll
 
     row.addEventListener('touchstart', (e) => {
       const tag = e.target.closest('.checkbox, .vote-btn, .drag-handle, button');
       if (tag) return;
       startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
       currentX = startX;
       swiping = false;
+      scrolling = false;
       swipeDir = null;
     }, { passive: true });
 
     row.addEventListener('touchmove', (e) => {
       if (startX === 0) return;
+      if (scrolling) return; // locked to vertical scroll, ignore
       currentX = e.touches[0].clientX;
       const dx = currentX - startX;
+      const dy = e.touches[0].clientY - startY;
 
-      if (!swiping && Math.abs(dx) > 10) {
+      // Decide direction: if vertical wins first, lock to scroll
+      if (!swiping && Math.abs(dy) > SCROLL_LOCK && Math.abs(dy) > Math.abs(dx)) {
+        scrolling = true;
+        return;
+      }
+
+      if (!swiping && Math.abs(dx) > SWIPE_ACTIVATE) {
         swiping = true;
         swipeDir = dx < 0 ? 'left' : 'right';
         wrap.classList.add('swiping');
@@ -756,6 +771,37 @@ function copyProjectsList() {
   });
 }
 
+function copyNotesToClipboard(id) {
+  const task = store.tasks.find(t => t.id === id);
+  if (!task) return;
+  const lines = [task.title];
+  if (task.notes) {
+    task.notes.split('\n').forEach(line => {
+      if (line.startsWith('[x] ')) {
+        lines.push(`  ✓ ${line.slice(4)}`);
+      } else if (line.startsWith('[ ] ')) {
+        lines.push(`  ☐ ${line.slice(4)}`);
+      } else if (line.trim()) {
+        lines.push(`  ${line}`);
+      }
+    });
+  }
+  // Add metadata line
+  const meta = [];
+  const prog = api.getChecklistProgress(task.id);
+  if (prog.total > 0) meta.push(`${prog.checked}/${prog.total} done`);
+  const totalMins = (task.timeSessions || []).reduce((sum, s) => sum + s.minutes, 0);
+  if (totalMins) meta.push(formatMinutes(totalMins) + ' tracked');
+  if (task.dueDate) meta.push('due ' + task.dueDate);
+  if (task.recurring) meta.push('repeats ' + task.recurring);
+  if (meta.length) lines.push(`[${meta.join(' · ')}]`);
+  navigator.clipboard.writeText(lines.join('\n')).then(() => {
+    showToast('Copied to clipboard');
+  }).catch(() => {
+    showToast('Copy failed');
+  });
+}
+
 function copyProjectToClipboard(id) {
   const task = store.tasks.find(t => t.id === id);
   if (!task) return;
@@ -820,17 +866,27 @@ function renderBacklog() {
   let olderCount = 0;
 
   // Render all items, marking 30+ day items with data-older
+  // Also insert a week divider between ≤7 day and >7 day tasks
   let html = '';
+  let weekDividerInserted = false;
   tasks.forEach(t => {
     let isOlder = false;
+    let daysDiff = null;
     if (t.dueDate) {
       const due = new Date(t.dueDate + 'T00:00:00');
-      const days = Math.round((due - now) / (1000*60*60*24));
-      if (days > 30) { isOlder = true; olderCount++; }
+      daysDiff = Math.round((due - now) / (1000*60*60*24));
+      if (daysDiff > 30) { isOlder = true; olderCount++; }
+    }
+    // Insert week divider before first task that's >7 days out (or undated)
+    if (!weekDividerInserted && (daysDiff === null || daysDiff > 7)) {
+      // Only show divider if there were tasks before it (i.e. some ≤7 day tasks)
+      if (html.length > 0) {
+        html += '<div class="ondeck-week-divider"></div>';
+      }
+      weekDividerInserted = true;
     }
     const item = renderBacklogItem(t);
     if (isOlder) {
-      // Inject data-older attribute into the backlog-item div
       html += item.replace('<div class="backlog-item"', '<div class="backlog-item" data-older="true"');
     } else {
       html += item;
@@ -1308,12 +1364,13 @@ function _resetAddModal() {
 function renderAddModalPills() {
   const el = document.getElementById('addModalPills');
 
-  // Date pill — default to today when adding from Today context
+  // Date pill — default depends on context: today's date for Today, no date for Drawer, +7d for On Deck/Project
   const isTodayCtx = addModalContext === 'today';
-  const defaultDate = isTodayCtx ? _localDateStr() : getDefaultDueDate();
+  const isDrawerCtx = addModalContext === 'drawer';
+  const defaultDate = isTodayCtx ? _localDateStr() : (isDrawerCtx ? null : getDefaultDueDate());
   const effectiveDate = store.selectedDueDate || defaultDate;
-  const dl = formatDueDate(effectiveDate);
-  const dateLabel = dl ? dl.text : effectiveDate;
+  const dl = effectiveDate ? formatDueDate(effectiveDate) : null;
+  const dateLabel = dl ? dl.text : (effectiveDate || 'Date');
   const recurPart = store.selectedRecurring ? ' · ↻' : '';
   const isCustomDate = store.selectedDueDate || store.selectedRecurring || store.selectedRecurDays.length;
 
@@ -1326,17 +1383,14 @@ function renderAddModalPills() {
   // Category picker — shown when adding to drawer
   if (addModalContext === 'drawer') {
     const cats = store.drawerCategories;
-    const catEntries = Object.entries(cats);
-    if (catEntries.length) {
-      const catLabel = addModalDrawerCategory && cats[addModalDrawerCategory]
-        ? cats[addModalDrawerCategory].label
-        : 'Category';
-      const catColor = addModalDrawerCategory && cats[addModalDrawerCategory]
-        ? cats[addModalDrawerCategory].color
-        : 'var(--text-muted)';
-      const dotHtml = `<span style="width:6px;height:6px;border-radius:50%;background:${catColor};display:inline-block;margin-right:2px;"></span>`;
-      html += `<button class="add-modal-pill ${addModalDrawerCategory ? 'active' : ''}" onclick="cycleAddModalCategory()">${dotHtml} ${catLabel}</button>`;
-    }
+    const catLabel = addModalDrawerCategory && cats[addModalDrawerCategory]
+      ? cats[addModalDrawerCategory].label
+      : 'Category';
+    const catColor = addModalDrawerCategory && cats[addModalDrawerCategory]
+      ? cats[addModalDrawerCategory].color
+      : 'var(--text-muted)';
+    const dotHtml = `<span style="width:6px;height:6px;border-radius:50%;background:${catColor};display:inline-block;margin-right:2px;"></span>`;
+    html += `<button class="add-modal-pill ${addModalDrawerCategory ? 'active' : ''}" onclick="cycleAddModalCategory()">${dotHtml} ${catLabel}</button>`;
   }
 
   // Helper text removed — each section now has its own sensible default date
@@ -2949,31 +3003,33 @@ function openNotesSidebar(id, anchorEl) {
     const schedParts = [];
     if (due) schedParts.push(due.text);
     if (recurLabel) schedParts.push('↻');
-    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${qid(id)}, this)" title="Edit date">${calIconSvg} ${schedParts.join(' · ')}</span>`;
+    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${qid(id)}, this)" title="Edit date">${calIconSvg} <span class="pill-label">${schedParts.join(' · ')}</span></span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date">${calIconSvg} Date</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date">${calIconSvg} <span class="pill-label" data-short="Date">Date</span></span>`;
   }
 
   // 2. Track pill — available on any task
   const hasTime = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
-  pillsHtml += `<span class="notes-card-pill${hasTime ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
+  pillsHtml += `<span class="notes-card-pill${hasTime ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} <span class="pill-label" data-short="Trk">Track</span></span>`;
 
   // 3. Project pill
-  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${qid(id)})" title="Toggle project mode">${projectIconSvg} Project</span>`;
+  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${qid(id)})" title="Toggle project mode">${projectIconSvg} <span class="pill-label" data-short="Proj">Project</span></span>`;
 
   // 4. List pill
   const hasChecklist = task.notes && /^\[ \] |^\[x\] /m.test(task.notes);
-  pillsHtml += `<span class="notes-card-pill${hasChecklist ? ' active' : ''}" onclick="toggleChecklistLines(${qid(id)})" title="Add checklist">${checkboxIconSvg} List</span>`;
+  pillsHtml += `<span class="notes-card-pill${hasChecklist ? ' active' : ''}" onclick="toggleChecklistLines(${qid(id)})" title="Add checklist">${checkboxIconSvg} <span class="pill-label" data-short="List">List</span></span>`;
 
   // 5. Contextual pill: "On Deck" for Today tasks, "Category" for Drawer tasks, "Drawer" for non-projects
   if (task.today) {
-    pillsHtml += `<span class="notes-card-pill" onclick="handleRemoveFromToday(${qid(id)}); closeNotesCard(true);" title="Move to On Deck">${onDeckIconSvg} On Deck</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="handleRemoveFromToday(${qid(id)}); closeNotesCard(true);" title="Move to On Deck">${onDeckIconSvg} <span class="pill-label" data-short="Deck">On Deck</span></span>`;
   } else if (task.drawer) {
     const catLabel = task.drawerCategory && store.drawerCategories[task.drawerCategory]
       ? store.drawerCategories[task.drawerCategory].label : 'Category';
-    pillsHtml += `<span class="notes-card-pill${task.drawerCategory ? ' active' : ''}" onclick="openCardCategoryPicker(${qid(id)}, this)" title="Set category">${categoryIconSvg} ${catLabel}</span>`;
+    const catShort = task.drawerCategory && store.drawerCategories[task.drawerCategory]
+      ? store.drawerCategories[task.drawerCategory].label.slice(0, 4) : 'Cat';
+    pillsHtml += `<span class="notes-card-pill${task.drawerCategory ? ' active' : ''}" onclick="openCardCategoryPicker(${qid(id)}, this)" title="Set category">${categoryIconSvg} <span class="pill-label" data-short="${catShort}">${catLabel}</span></span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} Drawer</span>`;
+    pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} <span class="pill-label" data-short="Drwr">Drawer</span></span>`;
   }
 
   // Build progress bar (only for projects with checklist items)
@@ -2985,6 +3041,7 @@ function openNotesSidebar(id, anchorEl) {
   card.innerHTML = `
     <div class="notes-card-header">
       <span class="notes-card-title" contenteditable="true" id="notesTitleEditable" spellcheck="false">${escHtml(task.title)}</span>
+      <button class="notes-card-copy" onclick="copyNotesToClipboard(${qid(task.id)})" title="Copy to clipboard">${copyIconSvg}</button>
       <button class="notes-card-close" onclick="closeNotesCard()">✕</button>
     </div>
     ${progressHtml}
@@ -3192,31 +3249,33 @@ function refreshSidebarMeta() {
     const schedParts = [];
     if (due) schedParts.push(due.text);
     if (recurLabel) schedParts.push('↻');
-    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${qid(id)}, this)" title="Edit date">${calIconSvg} ${schedParts.join(' · ')}</span>`;
+    pillsHtml += `<span class="notes-card-pill active" onclick="cardEditSchedule(${qid(id)}, this)" title="Edit date">${calIconSvg} <span class="pill-label">${schedParts.join(' · ')}</span></span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date">${calIconSvg} Date</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="cardEditSchedule(${qid(id)}, this)" title="Set date">${calIconSvg} <span class="pill-label" data-short="Date">Date</span></span>`;
   }
 
   // 2. Track pill
   const hasTime2 = (task.timeSessions && task.timeSessions.length > 0) || task.trackTime;
-  pillsHtml += `<span class="notes-card-pill${hasTime2 ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} Track</span>`;
+  pillsHtml += `<span class="notes-card-pill${hasTime2 ? ' active' : ''}" onclick="toggleTimeTracking(${qid(id)})" title="Track time">${trackIconSvg} <span class="pill-label" data-short="Trk">Track</span></span>`;
 
   // 3. Project pill
-  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${qid(id)})" title="Toggle project mode">${projectIconSvg} Project</span>`;
+  pillsHtml += `<span class="notes-card-pill${task.isProject ? ' active' : ''}" onclick="toggleProjectMode(${qid(id)})" title="Toggle project mode">${projectIconSvg} <span class="pill-label" data-short="Proj">Project</span></span>`;
 
   // 4. List pill
   const hasChecklist2 = task.notes && /^\[ \] |^\[x\] /m.test(task.notes);
-  pillsHtml += `<span class="notes-card-pill${hasChecklist2 ? ' active' : ''}" onclick="toggleChecklistLines(${qid(id)})" title="Add checklist">${checkboxIconSvg} List</span>`;
+  pillsHtml += `<span class="notes-card-pill${hasChecklist2 ? ' active' : ''}" onclick="toggleChecklistLines(${qid(id)})" title="Add checklist">${checkboxIconSvg} <span class="pill-label" data-short="List">List</span></span>`;
 
   // 5. Contextual pill: "On Deck" for Today tasks, "Category" for Drawer tasks, "Drawer" for non-projects
   if (task.today) {
-    pillsHtml += `<span class="notes-card-pill" onclick="handleRemoveFromToday(${qid(id)}); closeNotesCard(true);" title="Move to On Deck">${onDeckIconSvg} On Deck</span>`;
+    pillsHtml += `<span class="notes-card-pill" onclick="handleRemoveFromToday(${qid(id)}); closeNotesCard(true);" title="Move to On Deck">${onDeckIconSvg} <span class="pill-label" data-short="Deck">On Deck</span></span>`;
   } else if (task.drawer) {
     const catLabel = task.drawerCategory && store.drawerCategories[task.drawerCategory]
       ? store.drawerCategories[task.drawerCategory].label : 'Category';
-    pillsHtml += `<span class="notes-card-pill${task.drawerCategory ? ' active' : ''}" onclick="openCardCategoryPicker(${qid(id)}, this)" title="Set category">${categoryIconSvg} ${catLabel}</span>`;
+    const catShort = task.drawerCategory && store.drawerCategories[task.drawerCategory]
+      ? store.drawerCategories[task.drawerCategory].label.slice(0, 4) : 'Cat';
+    pillsHtml += `<span class="notes-card-pill${task.drawerCategory ? ' active' : ''}" onclick="openCardCategoryPicker(${qid(id)}, this)" title="Set category">${categoryIconSvg} <span class="pill-label" data-short="${catShort}">${catLabel}</span></span>`;
   } else {
-    pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} Drawer</span>`;
+    pillsHtml += `<span class="notes-card-pill notes-drawer-pill" onclick="cardMoveToDrawer(${qid(id)})" title="Move to Drawer">${drawerIconSvg} <span class="pill-label" data-short="Drwr">Drawer</span></span>`;
   }
 
   const pillsContainer = notesCardEl.querySelector('.notes-card-pills');
@@ -3588,7 +3647,10 @@ function handleInlineCheck(cb) {
   // If in add-modal, no need to save/render
   if (cb.closest('#addTaskNotes')) return;
   saveCurrentNotes();
-  render();
+  // Skip render() here — the checkbox visual state is already toggled via classList.
+  // Calling render() rebuilds the page DOM which resets the notes card scroll position
+  // on mobile (especially for long checklists). The task row indicators will update
+  // when the notes card is closed.
 
   // Project sub-item: update progress bar in notes card + counter/HoF
   if (currentNotesTaskId) {
@@ -4289,23 +4351,17 @@ const CREATURE_DEFS = [
       '..mmmm..','.mmmmmm.','mmbbbbmm','mbdbdbmm','mbbdbmm.','.mbbm...',
       '..bbbb..','..bbbb..','.bbbbbb.','..bbbb..','..dd.dd.',
     ]},
-  { name:'tiger', friend:'Tina the Tiger', // 9 rows → oy=7
+  { name:'tiger', friend:'Tora the Tiger', // 9 rows → oy=7
     pal:{ b:['#E86820','#f5c8a0'], s:['#2a2a2a','#a08870'], d:['#1a1a1a','#d0c8b0'] },
     ox:4, oy:7, rows:[
       'sb....bs','.bb..bb.','.bbbbbb.','.bdbdbb.','.bbdbbb.','..sbbs..',
       '..bbbb..','..sbbs..','..dd.dd.',
     ]},
-  { name:'bear', friend:'Bruno the Bear', // 9 rows → oy=7
+  { name:'bear', friend:'Bek the Bear', // 9 rows → oy=7
     pal:{ b:['#8B4513','#d4b896'], a:['#D2A068','#f5e6d0'], d:['#1a1a1a','#d0c8b0'] },
     ox:4, oy:7, rows:[
       '.b....b.','.bb..bb.','.bbbbbb.','.bdbdbb.','.baadbb.','..bbbb..',
       '..bbbb..','..bbbb..','..dd.dd.',
-    ]},
-  { name:'cat', friend:'Cleo the Cat', // 8 rows → oy=8
-    pal:{ b:['#888888','#c0b8b0'], d:['#1a1a1a','#d0c8b0'], s:['#F8A0A0','#d0a0a0'] },
-    ox:4, oy:8, rows:[
-      'b......b','.b....b.','.bbbbbb.','.bdbdbb.','.bbbsbb.','..bbbb..',
-      '..bbbb..','..b..b..',
     ]},
   { name:'dog', friend:'Benji the Dog', // 9 rows → oy=7
     pal:{ b:['#5C3A1E','#c8a070'], a:['#C4880E','#f0d8a0'], d:['#1a1a1a','#d0c8b0'], s:['#E8605E','#d08888'] },
@@ -4323,15 +4379,10 @@ const CREATURE_DEFS = [
     ox:4, oy:8, rows:[
       '..b..b..','.bbbbbb.','bwdbdwbb','bbbbbbbb','..bsbb..','..abba..','..abba..','..dd.dd.',
     ]},
-  { name:'penguin', friend:'Pip the Penguin', // 8 rows → oy=8
+  { name:'penguin', friend:'Porky the Penguin', // 8 rows → oy=8
     pal:{ b:['#2a2a2a','#d0c8b0'], w:['#F5F0E6','#3a2a1a'], s:['#F0A030','#d4a060'], d:['#1a1a1a','#f5f0e6'] },
     ox:4, oy:8, rows:[
       '..bbbb..','.bbbbbb.','.bwbbwb.','.bbsbbb.','.bwwwwb.','.bwwwwb.','..bbbb..','..ss.ss.',
-    ]},
-  { name:'rabbit', friend:'Rosie the Rabbit', // 9 rows → oy=7
-    pal:{ b:['#F5F0E6','#5a4a3a'], a:['#F8B0B0','#d08888'], d:['#1a1a1a','#d0c8b0'] },
-    ox:4, oy:7, rows:[
-      '..b..b..','..b..b..','..ba.ab.','.bbbbbb.','.bdbdbb.','..bbbb..','..bbbb..','...bb...','..dd.dd.',
     ]},
   { name:'fox', friend:'Felix the Fox', // 8 rows → oy=8
     pal:{ b:['#E86820','#f5c8a0'], w:['#F5F0E6','#5a4a3a'], d:['#1a1a1a','#d0c8b0'], a:['#C04810','#c8a070'] },
@@ -4348,12 +4399,12 @@ const CREATURE_DEFS = [
     ox:4, oy:9, rows:[
       '.ssssss.','sbbbbbbs','sbdbdbbs','.baabb..','..aabb..','...bb...','..dd.dd.',
     ]},
-  { name:'parrot', friend:'Polly the Parrot', // 8 rows → oy=8
+  { name:'parrot', friend:'Ross the Parrot', // 8 rows → oy=8
     pal:{ b:['#4CAF50','#a8d8a0'], r:['#E52E0A','#f08868'], s:['#F0A030','#d4a060'], d:['#1a1a1a','#d0c8b0'] },
     ox:4, oy:8, rows:[
       '..rrr...','.rrrbb..','.rdbbb..','..sbbb..','..bbbb..','..bbbb..','...bbb..','..dd.dd.',
     ]},
-  { name:'mouse', friend:'Midge the Mouse', // 7 rows → oy=9
+  { name:'mouse', friend:'Mookie the Mouse', // 7 rows → oy=9
     pal:{ b:['#AAAAAA','#a09890'], a:['#F8B0B0','#d08888'], d:['#1a1a1a','#d0c8b0'] },
     ox:4, oy:9, rows:[
       '.ab..ba.','.bb..bb.','..bbbb..','..bdbdb.','..bbab..','...bb...','..dd.dd.',
@@ -4373,17 +4424,17 @@ const CREATURE_DEFS = [
     ox:3, oy:10, rows:[
       '.b...b..','bwb.bwb.','bab.bab.','bbb.bbb.','.bsssb..','..s.s...',
     ]},
-  { name:'crab', friend:'Carl the Crab', // 7 rows → oy=9
+  { name:'crab', friend:'Crabby the Crab', // 7 rows → oy=9
     pal:{ b:['#E52E0A','#f08868'], s:['#F06030','#f0a888'], d:['#1a1a1a','#d0c8b0'], w:['#FFF','#3a2a1a'] },
     ox:3, oy:9, rows:[
       'd..bb..d','db.bb.bd','.bbbbbb.','.bwbbwb.','.bbbbbb.','..b..b..','.b....b.',
     ]},
-  { name:'elephant', friend:'Ellie the Elephant', // 8 rows → oy=8
+  { name:'elephant', friend:'Eddie the Elephant', // 8 rows → oy=8
     pal:{ b:['#8899AA','#b0b8c0'], a:['#AAB8C8','#c8d0d8'], d:['#1a1a1a','#d0c8b0'] },
     ox:4, oy:8, rows:[
       'b......b','.bbbbbb.','bbbbbbbb','bdbdbbbb','bbbabbbb','.bba....','..bbbb..','..dd.dd.',
     ]},
-  { name:'giraffe', friend:'Gus the Giraffe', // 9 rows → oy=7
+  { name:'giraffe', friend:'Gary the Giraffe', // 9 rows → oy=7
     pal:{ b:['#E8B84E','#f0d8a0'], s:['#8B4513','#c8a070'], d:['#1a1a1a','#d0c8b0'], a:['#D2A068','#e8c898'] },
     ox:4, oy:7, rows:[
       '..a..a..','..bb....','..bb....','.bbbb...','.bsbsb..','.bbbbb..','..bsb...','..bbb...','..dd.dd.',
@@ -4408,46 +4459,46 @@ const CREATURE_DEFS = [
     ox:4, oy:8, rows:[
       '..bbbb..','.bbbbbb.','.bdbdbb.','..bssb..','..bbbb..','.bbbbbb.','..bbbb..','..ss.ss.',
     ]},
-  { name:'snake', friend:'Sal the Snake', // 8 rows → oy=8
-    pal:{ b:['#4CAF50','#a8d8a0'], a:['#81C784','#c8e8c0'], d:['#E52E0A','#f08868'], s:['#1a1a1a','#d0c8b0'] },
+  { name:'octopus', friend:'Olgy the Octopus', // 8 rows → oy=8
+    pal:{ b:['#9C27B0','#c888d0'], a:['#CE93D8','#d8a8e0'], d:['#1a1a1a','#d0c8b0'], w:['#FFF','#3a2a1a'] },
     ox:4, oy:8, rows:[
-      '..sb....','.bbbb...','..ab....','...ab...','.bbbb...','.ba.....','..ab....','.bbd....',
+      '..bbbb..','.bbbbbb.','bbwbbwbb','bbbbbbbb','.bbbbbb.','b.b..b.b','b.b..b.b','.b....b.',
+    ]},
+  { name:'iguana', friend:'Ingi the Iguana', // 8 rows → oy=8
+    pal:{ b:['#4CAF50','#a8d8a0'], a:['#81C784','#c8e8c0'], s:['#2a7d4f','#a0d0b0'], d:['#1a1a1a','#d0c8b0'] },
+    ox:4, oy:8, rows:[
+      's.s.s...','.sssbb..','.bbbbbb.','.bdbdbb.','.bbbbbb.','..bbbb..','..bbbb..','..dd.ddd',
+    ]},
+  { name:'wombat', friend:'Weezy the Wombat', // 8 rows → oy=8
+    pal:{ b:['#8B6914','#d4c090'], a:['#D2A068','#f5e6d0'], d:['#1a1a1a','#d0c8b0'], s:['#5C2D0A','#b8a080'] },
+    ox:4, oy:8, rows:[
+      '.bb..bb.','.bbbbbb.','bbbbbbbb','bdbdbbbb','bbabbbbb','.bbbbbb.','..bbbb..','..dd.dd.',
     ]},
   // ─── SURPRISE GUESTS ───
-  { name:'bowie', friend:'David Bowie', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#F5E0C0','#8a7060'], h:['#E86820','#c8a070'], z:['#2456A4','#7098c8'], d:['#1a1a1a','#d0c8b0'], r:['#E52E0A','#f08868'], w:['#FFF','#3a2a1a'] },
-    ox:4, oy:7, rows:[
-      '..hhhh..','.hhhhhh.','hbzbwbhh','hbbbbhh.','.bbbbh..','..bbbb..','..bbbb..','..bbbb..','..dd.dd.',
+  { name:'starman', friend:'Starman', surprise:true, // 8 rows → oy=8
+    pal:{ b:['#F9ED32','#d4c860'], g:['#D4A84B','#e8c870'], d:['#1a1a1a','#d0c8b0'], w:['#FFF','#3a2a1a'] },
+    ox:4, oy:8, rows:[
+      '...bb...','...bb...','.bbbbbb.','..bbbb..','.bbbbbb.','bb.bb.bb','b..bb..b','...dd...',
     ]},
-  { name:'taylor', friend:'Taylor Swift', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#F5E0C0','#8a7060'], h:['#F0D060','#c8a860'], d:['#1a1a1a','#d0c8b0'], r:['#E52E0A','#f08868'], w:['#FFF','#3a2a1a'] },
-    ox:4, oy:7, rows:[
-      '..hhhh..','hhhhhhh.','hbdbdbh.','hbbrbhh.','.hbbhh..','..bbbb..','..rrrr..','..bbbb..','..dd.dd.',
-    ]},
-  { name:'lennon', friend:'John Lennon', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#F5E0C0','#8a7060'], h:['#8B4513','#c8a070'], d:['#1a1a1a','#d0c8b0'], g:['#F0A030','#d4a060'], w:['#FFF','#3a2a1a'] },
-    ox:4, oy:7, rows:[
-      'hh...hh.','hhhhhhh.','hbdbdbh.','hgwbwgh.','hbbbbhh.','.hbbh...','..bbbb..','..bbbb..','..dd.dd.',
-    ]},
-  { name:'harry', friend:'Harry Styles', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#F5E0C0','#8a7060'], h:['#5C2D0A','#b8a080'], d:['#1a1a1a','#d0c8b0'], r:['#E52E0A','#f08868'], p:['#9C27B0','#c888d0'], w:['#FFF','#3a2a1a'] },
-    ox:4, oy:7, rows:[
-      '.hhh.hh.','hhhhhhh.','hbdbdbh.','hbbbbhh.','.hbbh...','..pppp..','..pbpp..','..bbbb..','..dd.dd.',
-    ]},
-  { name:'freddie', friend:'Freddie Mercury', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#F5DEB3','#8a7060'], h:['#2a2a2a','#d0c8b0'], d:['#1a1a1a','#d0c8b0'], m:['#5C2D0A','#b8a080'], w:['#FFF','#3a2a1a'], r:['#E52E0A','#f08868'], y:['#F9ED32','#d4c860'] },
-    ox:4, oy:7, rows:[
-      '..hhhh..','hhhhhhh.','hbdbdbh.','hbmmbhh.','.hbbh...','..yyyy..','..wbbw..','..bbbb..','..dd.dd.',
-    ]},
-  { name:'prince', friend:'Prince', surprise:true, // 9 rows → oy=7
+  { name:'purpleone', friend:'The Purple One', surprise:true, // 9 rows → oy=7
     pal:{ b:['#A0622E','#d4b896'], h:['#1a1a1a','#d0c8b0'], d:['#1a1a1a','#d0c8b0'], p:['#9C27B0','#c888d0'], w:['#FFF','#3a2a1a'], r:['#E52E0A','#f08868'] },
     ox:4, oy:7, rows:[
       '..hhhh..','hhhhhh..','hbdbdbh.','hbbbbh..','.hbbh...','..pppp..','..pbbp..','..bbbb..','..dd.dd.',
     ]},
-  { name:'hendrix', friend:'Jimi Hendrix', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#A0622E','#c8a070'], h:['#1a1a1a','#d0c8b0'], d:['#1a1a1a','#d0c8b0'], r:['#E52E0A','#f08868'], w:['#FFF','#3a2a1a'], a:['#D2A068','#f5e6d0'] },
+  { name:'mamba', friend:'Mamba', surprise:true, // 8 rows → oy=8
+    pal:{ b:['#1a1a1a','#d0c8b0'], a:['#2a2a2a','#c0b8b0'], d:['#F9ED32','#d4c860'], s:['#4a4a4a','#a0a0a0'] },
+    ox:4, oy:8, rows:[
+      '..sb....','.bbbb...','..ab....','...ab...','.bbbb...','.ba.....','..ab....','.bbd....',
+    ]},
+  { name:'bigticket', friend:'The Big Ticket', surprise:true, // 9 rows → oy=7
+    pal:{ b:['#A0622E','#c8a070'], h:['#1a1a1a','#d0c8b0'], d:['#1a1a1a','#d0c8b0'], t:['#0C2340','#506888'], w:['#236192','#70a0c0'] },
     ox:4, oy:7, rows:[
-      '.hh..hh.','hhhhhhh.','hbdbdbh.','hbbbbhh.','.hbbh...','..rrrr..','..rbbr..','..bbbb..','..dd.dd.',
+      '..hhhh..','hhhhhhh.','hbdbdbh.','hbbbbhh.','.hbbh...','..tttt..','..twbt..','..bbbb..','..dd.dd.',
+    ]},
+  { name:'goat', friend:'The GOAT', surprise:true, // 9 rows → oy=7
+    pal:{ b:['#F5F0E6','#5a4a3a'], a:['#D0C8B8','#8a7a6a'], h:['#B8977A','#d4c0a8'], d:['#1a1a1a','#d0c8b0'] },
+    ox:4, oy:7, rows:[
+      'hh....hh','..bbbb..','.bbbbbb.','.bdbdbb.','.bbbbbb.','..bbbb..','..abba..','..bbbb..','..dd.dd.',
     ]},
   // ─── PET CATS ───
   { name:'fifi', friend:'Fifi the Cat', // 8 rows → oy=8
@@ -4499,43 +4550,6 @@ const CREATURE_DEFS = [
     pal:{ b:['#7BA4C8','#a0c0d8'], w:['#F5F0E6','#3a2a1a'], d:['#1a1a1a','#d0c8b0'], h:['#D4A84B','#e8c870'] },
     ox:4, oy:7, rows:[
       '....h...','..bbbb..','.bbbbbb.','bbwbbwbb','bbbbbbbb','.bbbbbb.','..bbbb..','...bb...','...dd...',
-    ]},
-  // ─── SURPRISE NFL GUESTS ───
-  { name:'marino', friend:'Dan Marino', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#F5E0C0','#8a7060'], h:['#5C2D0A','#b8a080'], d:['#1a1a1a','#d0c8b0'], t:['#008E97','#60b8c0'], w:['#F06030','#f0a888'] },
-    ox:4, oy:7, rows:[
-      '..hhhh..','hhhhhhh.','hbdbdbh.','hbbbbhh.','.hbbh...','..tttt..','..tbbw..','..bbbb..','..dd.dd.',
-    ]},
-  { name:'payton', friend:'Walter Payton', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#A0622E','#c8a070'], h:['#1a1a1a','#d0c8b0'], d:['#1a1a1a','#d0c8b0'], t:['#0B162A','#6080a0'], w:['#E86820','#f0a868'] },
-    ox:4, oy:7, rows:[
-      '..hhhh..','hhhhhhh.','hbdbdbh.','hbbbbhh.','.hbbh...','..tttt..','..twbw..','..bbbb..','..dd.dd.',
-    ]},
-  { name:'rice', friend:'Jerry Rice', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#A0622E','#c8a070'], h:['#1a1a1a','#d0c8b0'], d:['#1a1a1a','#d0c8b0'], t:['#AA0000','#c86060'], w:['#D4A84B','#e8c870'] },
-    ox:4, oy:7, rows:[
-      '..hhhh..','hhhhhhh.','hbdbdbh.','hbbbbhh.','.hbbh...','..tttt..','..twbt..','..bbbb..','..dd.dd.',
-    ]},
-  { name:'moss', friend:'Randy Moss', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#A0622E','#c8a070'], h:['#1a1a1a','#d0c8b0'], d:['#1a1a1a','#d0c8b0'], t:['#4F2683','#9070b0'], w:['#F9ED32','#d4c860'] },
-    ox:4, oy:7, rows:[
-      '..hhhh..','hhhhhhh.','hbdbdbh.','hbbbbhh.','.hbbh...','..tttt..','..twbt..','..bbbb..','..dd.dd.',
-    ]},
-  // ─── SURPRISE NBA GUESTS ───
-  { name:'jordan', friend:'Michael Jordan', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#A0622E','#c8a070'], h:['#1a1a1a','#d0c8b0'], d:['#1a1a1a','#d0c8b0'], t:['#CE1141','#d87088'], w:['#F5F0E6','#3a2a1a'] },
-    ox:4, oy:7, rows:[
-      '..hhhh..','hhhhhhh.','hbdbdbh.','hbbbbhh.','.hbbh...','..tttt..','..twbt..','..bbbb..','..dd.dd.',
-    ]},
-  { name:'kobe', friend:'Kobe Bryant', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#A0622E','#c8a070'], h:['#1a1a1a','#d0c8b0'], d:['#1a1a1a','#d0c8b0'], t:['#552583','#9070b0'], w:['#FDB927','#e8c870'] },
-    ox:4, oy:7, rows:[
-      '..hhhh..','hhhhhhh.','hbdbdbh.','hbbbbhh.','.hbbh...','..tttt..','..twbt..','..bbbb..','..dd.dd.',
-    ]},
-  { name:'garnett', friend:'Kevin Garnett', surprise:true, // 9 rows → oy=7
-    pal:{ b:['#A0622E','#c8a070'], h:['#1a1a1a','#d0c8b0'], d:['#1a1a1a','#d0c8b0'], t:['#0C2340','#506888'], w:['#236192','#70a0c0'] },
-    ox:4, oy:7, rows:[
-      '..hhhh..','hhhhhhh.','hbdbdbh.','hbbbbhh.','.hbbh...','..tttt..','..twbt..','..bbbb..','..dd.dd.',
     ]},
 ];
 

@@ -820,6 +820,14 @@
     font-family: Inter, sans-serif;
   }
 
+  /* ─── ON DECK WEEK DIVIDER ─── */
+  .ondeck-week-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 6px 16px;
+    opacity: 0.5;
+  }
+
   /* ─── 30+ DAYS TOGGLE ─── */
   .older-toggle {
     text-align: center;
@@ -2530,6 +2538,26 @@
     overflow: visible;
     text-overflow: unset;
   }
+  .notes-card-copy {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    transition: all var(--transition);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }
+  .notes-card-copy:hover {
+    color: var(--accent-red);
+    background: var(--bg-secondary);
+  }
+  .notes-card-copy svg {
+    width: 16px;
+    height: 16px;
+  }
   .notes-card-close {
     background: none;
     border: none;
@@ -3566,17 +3594,17 @@
       flex-wrap: wrap;
     }
     .add-modal-pill {
-      font-size: 12px;
-      height: 30px;
-      padding: 0 10px;
+      font-size: 13px;
+      height: 34px;
+      padding: 0 12px;
       white-space: nowrap;
     }
     .add-modal-actions {
       padding: 10px 16px 14px;
     }
     .add-modal-action-btn {
-      font-size: 12px;
-      padding: 8px 8px;
+      font-size: 14px;
+      padding: 10px 10px;
     }
 
     /* Add task box (legacy, hidden) */
@@ -3647,16 +3675,32 @@
       min-width: 0;
       justify-content: center;
       padding: 6px 4px;
-      font-size: 11px;
-      height: 30px;
+      font-size: 13px;
+      height: 34px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .notes-card-pill svg {
-      width: 12px;
-      height: 12px;
+      width: 14px;
+      height: 14px;
       flex-shrink: 0;
+    }
+    /* Swap pill labels to short form on mobile */
+    .notes-card-pill .pill-label[data-short] {
+      font-size: 0;  /* hide full text */
+    }
+    .notes-card-pill .pill-label[data-short]::after {
+      content: attr(data-short);
+      font-size: 13px;
+    }
+    .notes-card-copy svg {
+      width: 20px;
+      height: 20px;
+    }
+    .notes-card-close {
+      font-size: 22px;
+      padding: 6px 10px;
     }
 
     /* Add modal pill SVGs on mobile */
@@ -3684,8 +3728,8 @@
 
     /* Time add pill — mobile */
     .time-add-pill {
-      font-size: 11px;
-      padding: 5px 12px;
+      font-size: 13px;
+      padding: 7px 14px;
     }
 
     /* Time form — mobile */
@@ -3697,6 +3741,19 @@
     }
     .time-note-input {
       min-height: 50px;
+      font-size: 16px;
+    }
+    .time-save-btn {
+      font-size: 15px;
+      padding: 10px 22px;
+    }
+    .time-cancel-btn {
+      font-size: 15px;
+      padding: 10px 18px;
+    }
+    .time-date-input {
+      font-size: 16px;
+      padding: 10px 12px;
     }
 
     /* Schedule popover — bottom sheet on mobile */
@@ -3723,9 +3780,48 @@
       top: 10px;
       right: 10px;
     }
+    .schedule-popover .sched-label {
+      font-size: 13px;
+    }
     .schedule-popover .sched-month-nav {
       font-size: 22px;
       padding: 6px 10px;
+    }
+    .sched-month-header span {
+      font-size: 15px;
+    }
+    .sched-day-label {
+      font-size: 12px;
+    }
+    .sched-day {
+      font-size: 14px;
+    }
+    .sched-more-link {
+      font-size: 13px;
+    }
+    .sched-full-date input[type="date"] {
+      font-size: 16px;
+      padding: 10px 12px;
+    }
+    .sched-repeat-toggle {
+      font-size: 14px;
+    }
+    .sched-repeat-toggle input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+    }
+    .recur-freq {
+      font-size: 13px;
+      padding: 8px 0;
+    }
+    .recur-day {
+      font-size: 13px;
+      min-width: 36px;
+      height: 36px;
+    }
+    .recur-clear-btn, .recur-ok-btn {
+      font-size: 14px;
+      padding: 10px;
     }
 
     /* Due Today popup — bottom sheet on mobile */
@@ -3845,21 +3941,47 @@
     .archive-popup {
       width: calc(100vw - 24px);
     }
+    .archive-popup-close {
+      font-size: 20px;
+      padding: 6px 10px;
+    }
+    .archive-popup-title {
+      font-size: 20px;
+    }
+    .archive-popup-list .completed-task {
+      font-size: 15px;
+      padding: 10px 16px;
+    }
+    .archive-popup-list .completed-task .done-check {
+      width: 20px;
+      height: 20px;
+      font-size: 11px;
+    }
+    .archive-popup-list .completed-task .done-date {
+      font-size: 12px;
+    }
 
     /* Projects section */
     .notes-progress-row {
       margin-bottom: 6px;
     }
     .time-section-header {
-      font-size: 10px;
+      font-size: 14px;
+    }
+    .time-total {
+      font-size: 14px;
     }
     .time-session-item {
-      font-size: 10px;
+      font-size: 13px;
+      padding: 7px 4px;
     }
-    .time-session-item .time-session-delete { opacity: 0.4; }
-    .time-edit-form { padding: 8px; }
+    .time-session-delete {
+      font-size: 14px;
+      opacity: 0.4;
+    }
+    .time-edit-form { padding: 12px; }
     .time-slider-label {
-      font-size: 12px;
+      font-size: 16px;
     }
 
     /* Unlock banner */
@@ -3967,20 +4089,36 @@
       font-size: 9px;
     }
     .notes-card-pill {
-      padding: 2px 5px;
-      font-size: 8px;
+      padding: 4px 4px;
+      font-size: 11px;
+      height: 30px;
+    }
+    .notes-card-pill .pill-label[data-short]::after {
+      font-size: 11px;
     }
     .notes-card-pill svg {
-      width: 9px;
-      height: 9px;
+      width: 12px;
+      height: 12px;
     }
     .add-modal-pill {
-      font-size: 11px;
-      height: 26px;
+      font-size: 12px;
+      height: 30px;
       padding: 0 8px;
     }
     .add-modal-pill svg {
-      width: 11px;
-      height: 11px;
+      width: 12px;
+      height: 12px;
+    }
+    .recur-freq {
+      font-size: 11px;
+      padding: 6px 0;
+    }
+    .recur-day {
+      font-size: 11px;
+      min-width: 32px;
+      height: 32px;
+    }
+    .sched-day {
+      font-size: 12px;
     }
   }

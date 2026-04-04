@@ -647,8 +647,9 @@ async function refreshFromSupabase(force) {
         }
       });
 
-      // Drawer categories
-      if (data.drawerCategories && typeof data.drawerCategories === 'object') {
+      // Drawer categories — skip if we recently wrote/deleted a category (echo window)
+      if (data.drawerCategories && typeof data.drawerCategories === 'object'
+          && !(window._isCategoryEcho && window._isCategoryEcho())) {
         if (Array.isArray(data.drawerCategories)) {
           store.drawerCategories = {};
           data.drawerCategories.forEach(cat => {
