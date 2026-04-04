@@ -97,10 +97,15 @@
   }
   .login-message.error { color: var(--accent-red); }
   .login-message.success { color: var(--accent-green); }
-  .login-signout {
+  .app-footer-actions {
     position: fixed;
     bottom: 16px;
     right: 16px;
+    display: flex;
+    gap: 8px;
+    z-index: 1000;
+  }
+  .login-signout, .feedback-btn {
     font-size: 11px;
     color: var(--text-muted);
     background: var(--bg-card);
@@ -109,22 +114,101 @@
     padding: 4px 10px;
     cursor: pointer;
     font-family: 'Inter', sans-serif;
-    z-index: 1000;
     opacity: 0.6;
     transition: opacity 0.2s;
   }
-  .login-signout:hover { opacity: 1; }
-  /* Hide sign out when mobile popups are open */
-  body.notes-open .login-signout,
-  body.modal-open .login-signout { display: none; }
-  /* Mobile: sign out flows at page bottom, not fixed */
+  .login-signout:hover, .feedback-btn:hover { opacity: 1; }
+  /* Hide footer actions when mobile popups are open */
+  body.notes-open .app-footer-actions,
+  body.modal-open .app-footer-actions { display: none; }
+
+  /* Feedback popup */
+  .feedback-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.3);
+    z-index: 10000;
+  }
+  .feedback-popup {
+    position: fixed;
+    bottom: 56px;
+    right: 16px;
+    width: 320px;
+    max-width: 90vw;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    padding: 16px;
+    z-index: 10001;
+    font-family: 'Inter', sans-serif;
+  }
+  .feedback-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .feedback-title {
+    font-family: 'Source Serif 4', serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .feedback-close {
+    background: none; border: none;
+    font-size: 16px; color: var(--text-muted);
+    cursor: pointer; padding: 0;
+  }
+  .feedback-close:hover { color: var(--accent-red); }
+  .feedback-popup textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    resize: vertical;
+    min-height: 80px;
+  }
+  .feedback-popup textarea:focus {
+    outline: none;
+    border-color: var(--accent-red);
+  }
+  .feedback-submit {
+    margin-top: 10px;
+    width: 100%;
+    padding: 8px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent-red);
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .feedback-submit:hover { opacity: 0.85; }
+  .feedback-submit:disabled { opacity: 0.5; cursor: default; }
+
+  /* Mobile: footer flows at page bottom */
   @media (max-width: 640px) {
-    .login-signout {
+    .app-footer-actions {
       position: static;
-      display: block;
+      display: flex;
+      justify-content: center;
       margin: 40px auto 24px;
       opacity: 0.4;
       z-index: auto;
+    }
+    .feedback-popup {
+      bottom: 0; left: 0; right: 0;
+      width: 100vw; max-width: 100vw;
+      border-radius: 14px 14px 0 0;
+      position: fixed;
     }
   }
   .app-loading {
@@ -361,7 +445,25 @@
 <div class="unlock-banner" id="unlockBanner"><span class="bolt">&#9889;</span> <span id="unlockText"></span></div>
 <div class="creature-tooltip" id="creatureTooltip"></div>
 
-<button class="login-signout" onclick="handleSignOut()">Sign out</button>
+<div class="app-footer-actions">
+  <button class="feedback-btn" onclick="toggleFeedbackForm()">Feedback</button>
+  <button class="login-signout" onclick="handleSignOut()">Sign out</button>
+</div>
+
+<!-- Feedback popup -->
+<div class="feedback-overlay" id="feedbackOverlay" onclick="closeFeedback()" style="display:none;"></div>
+<div class="feedback-popup" id="feedbackPopup" style="display:none;">
+  <div class="feedback-header">
+    <span class="feedback-title">Send Feedback</span>
+    <button class="feedback-close" onclick="closeFeedback()">✕</button>
+  </div>
+  <form name="feedback" method="POST" data-netlify="true" onsubmit="return handleFeedbackSubmit(event)">
+    <input type="hidden" name="form-name" value="feedback">
+    <input type="hidden" name="user-email" id="feedbackUserEmail">
+    <textarea name="message" id="feedbackMessage" rows="4" placeholder="Describe an issue or a feature you'd like to see..." required></textarea>
+    <button type="submit" class="feedback-submit" id="feedbackSubmitBtn">Submit</button>
+  </form>
+</div>
 
 </div><!-- /appPage -->
 
@@ -430,6 +532,68 @@ async function handleSignOut() {
   await TinyApeAuth.signOut();
   document.getElementById('appPage').style.display = 'none';
   document.getElementById('loginPage').style.display = 'flex';
+}
+
+// ─── FEEDBACK FORM ───
+function toggleFeedbackForm() {
+  const popup = document.getElementById('feedbackPopup');
+  const overlay = document.getElementById('feedbackOverlay');
+  const isOpen = popup.style.display !== 'none';
+  if (isOpen) {
+    closeFeedback();
+  } else {
+    // Pre-fill user email if available
+    try {
+      const session = window.supabase && window.supabase.auth.getSession();
+      if (session) {
+        session.then(({ data }) => {
+          if (data && data.session && data.session.user) {
+            document.getElementById('feedbackUserEmail').value = data.session.user.email || '';
+          }
+        });
+      }
+    } catch(e) {}
+    popup.style.display = 'block';
+    overlay.style.display = 'block';
+    document.getElementById('feedbackMessage').focus();
+  }
+}
+
+function closeFeedback() {
+  document.getElementById('feedbackPopup').style.display = 'none';
+  document.getElementById('feedbackOverlay').style.display = 'none';
+}
+
+function handleFeedbackSubmit(e) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('feedbackSubmitBtn');
+  const msg = document.getElementById('feedbackMessage').value.trim();
+  if (!msg) return false;
+
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  fetch('/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(new FormData(form)).toString()
+  }).then(() => {
+    btn.textContent = 'Sent!';
+    document.getElementById('feedbackMessage').value = '';
+    setTimeout(() => {
+      closeFeedback();
+      btn.disabled = false;
+      btn.textContent = 'Submit';
+      if (typeof showToast === 'function') showToast('Thanks for the feedback!');
+    }, 800);
+  }).catch(() => {
+    btn.disabled = false;
+    btn.textContent = 'Submit';
+    if (typeof showToast === 'function') showToast('Failed to send — try again');
+  });
+
+  return false;
 }
 
 // Enter key on login input
