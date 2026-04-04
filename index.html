@@ -629,12 +629,6 @@ async function loadAndShowApp() {
 
   await refreshFromSupabase(true);  // force on initial load
 
-  // Seed default drawer categories for new users
-  if (Object.keys(store.drawerCategories).length === 0) {
-    api.addDrawerCategory('work', 'Work', '#3498db');
-    api.addDrawerCategory('personal', 'Personal', '#27ae60');
-  }
-
   document.getElementById('loadingPage').style.display = 'none';
   document.getElementById('appPage').style.display = 'block';
 
