@@ -396,6 +396,17 @@
       _lastCategoryWrite = Date.now();
       _origAddCat(key, label, color);
       DB.saveDrawerCategory({ key, label, color, sortOrder: Object.keys(store.drawerCategories).length })
+        .then(saved => {
+          // Re-key in-memory from local key to DB UUID so delete works correctly
+          if (saved && saved.id && saved.id !== key && store.drawerCategories[key]) {
+            store.drawerCategories[saved.id] = { id: saved.id, label: store.drawerCategories[key].label, color: store.drawerCategories[key].color };
+            delete store.drawerCategories[key];
+            // Update any tasks referencing the old key
+            store.tasks.forEach(t => { if (t.drawerCategory === key) t.drawerCategory = saved.id; });
+            _lastCategoryWrite = Date.now();
+            render();
+          }
+        })
         .catch(err => console.error('Sync error (addDrawerCategory):', err));
     };
 
@@ -406,7 +417,7 @@
       _origRenameCat(key, newLabel);
       const cat = store.drawerCategories[key];
       if (cat) {
-        DB.saveDrawerCategory({ key, label: cat.label, color: cat.color, sortOrder: Object.keys(store.drawerCategories).indexOf(key) })
+        DB.saveDrawerCategory({ id: key, key: cat.id || key, label: cat.label, color: cat.color, sortOrder: Object.keys(store.drawerCategories).indexOf(key) })
           .catch(err => console.error('Sync error (renameDrawerCategory):', err));
       }
     };

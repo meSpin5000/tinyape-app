@@ -811,7 +811,7 @@ async function refreshFromSupabase(force) {
         if (Array.isArray(data.drawerCategories)) {
           store.drawerCategories = {};
           data.drawerCategories.forEach(cat => {
-            store.drawerCategories[cat.key || cat.id] = { label: cat.label, color: cat.color };
+            store.drawerCategories[cat.id] = { id: cat.id, label: cat.label, color: cat.color };
           });
         } else {
           store.drawerCategories = data.drawerCategories;
@@ -1008,7 +1008,7 @@ function startRealtimeSync() {
     console.log('[Realtime] Category change:', payload.eventType);
     if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
       const row = payload.new;
-      store.drawerCategories[row.key || row.id] = { label: row.label, color: row.color };
+      store.drawerCategories[row.id] = { id: row.id, label: row.label, color: row.color };
     } else if (payload.eventType === 'DELETE') {
       const id = payload.old.id;
       delete store.drawerCategories[id];

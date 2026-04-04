@@ -565,10 +565,11 @@ window.TinyApeDB = {
         return false;
       }
 
+      // categoryId may be a UUID (id) or a text key — try both
       const { error } = await window.supabase
         .from('drawer_categories')
         .delete()
-        .eq('key', categoryId)
+        .eq('id', categoryId)
         .eq('user_id', userId);
 
       if (error) {
