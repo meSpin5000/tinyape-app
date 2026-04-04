@@ -3632,6 +3632,11 @@ function notesHtmlToText(container) {
 function handleInlineCheck(cb) {
   const line = cb.closest('.notes-line');
   if (!line) return;
+
+  // Preserve scroll position of the notes card to prevent jump
+  const card = cb.closest('.notes-card');
+  const scrollBefore = card ? card.scrollTop : 0;
+
   // Toggle checked state — span-based checkboxes use classList, input-based use .checked
   const isInput = cb.tagName === 'INPUT';
   let wasChecked;
@@ -3647,6 +3652,9 @@ function handleInlineCheck(cb) {
   // If in add-modal, no need to save/render
   if (cb.closest('#addTaskNotes')) return;
   saveCurrentNotes();
+
+  // Restore scroll position — browser may shift it when focus changes near contenteditable
+  if (card) requestAnimationFrame(() => { card.scrollTop = scrollBefore; });
   // Skip render() here — the checkbox visual state is already toggled via classList.
   // Calling render() rebuilds the page DOM which resets the notes card scroll position
   // on mobile (especially for long checklists). The task row indicators will update
@@ -3675,6 +3683,14 @@ function handleInlineCheck(cb) {
     }
   }
 }
+
+// Prevent checkbox clicks from stealing focus to contenteditable, which causes scroll jumps
+document.addEventListener('mousedown', (e) => {
+  if (e.target.classList.contains('cb-visual')) e.preventDefault();
+});
+document.addEventListener('touchend', (e) => {
+  if (e.target.classList.contains('cb-visual')) e.preventDefault();
+});
 
 // Handle Enter key inside checklist lines — auto-add new checkbox
 function handleNotesKeydown(e) {

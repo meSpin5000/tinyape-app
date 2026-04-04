@@ -367,9 +367,9 @@
     content: '';
     position: absolute;
     left: 3px;
-    top: 1px;
-    width: 4px;
-    height: 7px;
+    top: 0.5px;
+    width: 3.5px;
+    height: 6.5px;
     border: solid #fff;
     border-width: 0 1.5px 1.5px 0;
     transform: rotate(45deg);
@@ -3118,9 +3118,9 @@
     content: '';
     position: absolute;
     left: 3px;
-    top: 1px;
-    width: 4px;
-    height: 7px;
+    top: 0.5px;
+    width: 3.5px;
+    height: 6.5px;
     border: solid #fff;
     border-width: 0 1.5px 1.5px 0;
     transform: rotate(45deg);
