@@ -2203,7 +2203,8 @@ function renderDrawer() {
       </span>`;
     });
   }
-  pillsHtml += `<span class="drawer-cat-add" onclick="handleAddDrawerCategory()">+ add</span>`;
+  const addLabel = catEntries.length ? '+ add' : '+ add a category';
+  pillsHtml += `<span class="drawer-cat-add" onclick="handleAddDrawerCategory()">${addLabel}</span>`;
   pillsEl.innerHTML = pillsHtml;
 
   // Group tasks by category
