@@ -817,8 +817,20 @@ function copyProjectToClipboard(id) {
       }
     });
   }
+  const sessions = (task.timeSessions || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const totalMins = sessions.reduce((sum, s) => sum + s.minutes, 0);
+  if (sessions.length > 0) {
+    lines.push('');
+    lines.push(`⏱ Time — ${formatMinutes(totalMins)} total`);
+    sessions.forEach(s => {
+      const d = new Date(s.date + 'T00:00:00');
+      const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+      const parts = [dateStr, formatMinutes(s.minutes)];
+      if (s.note) parts.push(s.note);
+      lines.push(`  ${parts.join(' · ')}`);
+    });
+  }
   const prog = api.getChecklistProgress(task.id);
-  const totalMins = (task.timeSessions || []).reduce((sum, s) => sum + s.minutes, 0);
   const meta = [];
   if (prog.total > 0) meta.push(`${prog.checked}/${prog.total} done`);
   if (totalMins) meta.push(formatMinutes(totalMins) + ' tracked');
@@ -3042,7 +3054,7 @@ function openNotesSidebar(id, anchorEl) {
   card.innerHTML = `
     <div class="notes-card-header">
       <span class="notes-card-title" contenteditable="true" id="notesTitleEditable" spellcheck="false">${escHtml(task.title)}</span>
-      <button class="notes-card-copy" onclick="copyNotesToClipboard(${qid(task.id)})" title="Copy to clipboard">${copyIconSvg}</button>
+      ${task.isProject ? '' : `<button class="notes-card-copy" onclick="copyNotesToClipboard(${qid(task.id)})" title="Copy to clipboard">${copyIconSvg}</button>`}
       <button class="notes-card-close" onclick="closeNotesCard()">✕</button>
     </div>
     ${progressHtml}
