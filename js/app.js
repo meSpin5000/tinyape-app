@@ -51,7 +51,10 @@ const api = {
   },
   reorderProjects(orderedIds) {
     orderedIds.forEach((id, i) => {
-      const task = store.tasks.find(t => t.id === id);
+      const idStr = String(id);
+      const task = store.tasks.find(t =>
+        String(t.id) === idStr || (t._localId != null && String(t._localId) === idStr)
+      );
       if (task) task.projectOrder = i + 1;
     });
   },
@@ -324,7 +327,10 @@ const api = {
   },
   reorderToday(orderedIds) {
     orderedIds.forEach((id, i) => {
-      const task = store.tasks.find(t => t.id === id);
+      const idStr = String(id);
+      const task = store.tasks.find(t =>
+        String(t.id) === idStr || (t._localId != null && String(t._localId) === idStr)
+      );
       if (task) task.todayOrder = i + 1;
     });
   },
@@ -4062,8 +4068,8 @@ function saveOrder() {
     api.reorderToday(ids);
   }
   items.forEach((el, i) => {
-    const numEl = el.querySelector('.today-number');
-    if (numEl) numEl.textContent = i + 1;
+    const numText = el.querySelector('.today-number-text');
+    if (numText) numText.textContent = i + 1;
   });
 }
 

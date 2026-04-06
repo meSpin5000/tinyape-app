@@ -36,8 +36,10 @@
   window._syncQueue = pendingWrites;  // for debugging
 
   // Resolve a task ID that might be stale (integer ID replaced by UUID).
+  // Coerce to string so numeric DOM data-ids match after ID swap.
   window._findTaskById = function(id) {
-    return store.tasks.find(t => t.id === id || t._localId === id);
+    const idStr = String(id);
+    return store.tasks.find(t => String(t.id) === idStr || (t._localId != null && String(t._localId) === idStr));
   };
 
   window._hasPendingWrites = function() {
@@ -384,7 +386,7 @@
       api.reorderProjects = function(orderedIds) {
         _origReorderProjects(orderedIds);
         orderedIds.forEach(id => {
-          const task = store.tasks.find(t => t.id === id);
+          const task = window._findTaskById ? window._findTaskById(id) : store.tasks.find(t => t.id === id);
           if (task) persistTask(task);
         });
       };
