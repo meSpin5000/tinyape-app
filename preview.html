@@ -206,82 +206,203 @@ window._isSafeToSync = function() { return true; };
 <script src="js/app.js"></script>
 
 <script>
-// ─── SEED SAMPLE DATA ───
+// ─── SEED SAMPLE DATA (50 tasks for demo) ───
 (function() {
-  const today = new Date().toISOString().split('T')[0];
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-  const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-  const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0];
-  const farOut = new Date(Date.now() + 60 * 86400000).toISOString().split('T')[0];
+  // ── Date helpers ──
+  function d(offset) { return new Date(Date.now() + offset * 86400000).toISOString().split('T')[0]; }
+  function ts(offset, h, m) {
+    var dt = new Date(Date.now() + offset * 86400000);
+    dt.setHours(h || 10, m || 0, 0, 0);
+    return dt.toISOString();
+  }
+  const today = d(0), tomorrow = d(1), in2 = d(2), in3 = d(3), in4 = d(4), in5 = d(5), in6 = d(6);
+  const nextWeek = d(7), in10 = d(10), in14 = d(14), in21 = d(21), in30 = d(30), in45 = d(45), in60 = d(60);
+  const yesterday = d(-1), twoDaysAgo = d(-2), threeDaysAgo = d(-3), fourDaysAgo = d(-4);
+  const fiveDaysAgo = d(-5), sixDaysAgo = d(-6), oneWeekAgo = d(-7);
+  const twoWeeksAgo = d(-14), threeWeeksAgo = d(-21);
 
-  // Today tasks
+  function T(overrides) {
+    return Object.assign({
+      id: 'p' + (++_tid), title: '', category: '', today: false, todayOrder: null,
+      done: false, completedAt: null, recurring: null, recurDays: null, dueDate: null,
+      projectId: null, notes: '', drawer: false, drawerCategory: null,
+      isProject: false, trackTime: false, timeSessions: [], projectOrder: null
+    }, overrides);
+  }
+  var _tid = 0;
+
+  // ═══════════════════════════════════════════
+  // TODAY (7 active + 4 crushed = 11)
+  // ═══════════════════════════════════════════
   store.tasks.push(
-    { id: 'p1', title: 'QBO - Pay Bills - All Orgs', category: '', today: true, todayOrder: 1, done: false, completedAt: null, recurring: 'weekly', recurDays: null, dueDate: yesterday, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p2', title: 'AGING reminders out', category: '', today: true, todayOrder: 2, done: false, completedAt: null, recurring: 'weekly', recurDays: null, dueDate: yesterday, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p3', title: 'Pay Austin and Holly', category: '', today: true, todayOrder: 3, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p4', title: 'Review quarterly report draft', category: '', today: true, todayOrder: 4, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: today, projectId: null, notes: 'Check figures against actuals\n[ ] Revenue section\n[ ] Expense section\n[ ] Cash flow', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p5', title: 'Call the accountant about Q1 filing', category: '', today: true, todayOrder: 5, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: today, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] }
+    T({ title: 'QBO — Pay bills, all orgs', today: true, todayOrder: 1, recurring: 'weekly', recurDays: [1], dueDate: today }),
+    T({ title: 'Send AGING reminders', today: true, todayOrder: 2, recurring: 'weekly', recurDays: [1], dueDate: today }),
+    T({ title: 'Review quarterly report draft', today: true, todayOrder: 3, dueDate: today, notes: 'Check figures against actuals\n[ ] Revenue section\n[ ] Expense section\n[ ] Cash flow\n[ ] Footnotes' }),
+    T({ title: 'Call accountant re: Q1 filing', today: true, todayOrder: 4, dueDate: today }),
+    T({ title: 'Pay Austin and Holly', today: true, todayOrder: 5, dueDate: tomorrow }),
+    T({ title: 'Draft investor update email', today: true, todayOrder: 6, dueDate: today, notes: 'Keep it under 500 words\nHighlight new product launch', trackTime: true }),
+    T({ title: 'Prep slide deck for board mtg', today: true, todayOrder: 7, dueDate: in2, notes: '[ ] Financial overview\n[ ] Product roadmap\n[ ] Q&A topics', trackTime: true, timeSessions: [{ date: yesterday, minutes: 45, note: 'Outline + structure' }] }),
+    // Crushed today
+    T({ title: 'Send invoice to Acme Corp', today: true, done: true, completedAt: ts(0, 8, 15), dueDate: today }),
+    T({ title: 'Update team Slack channel', today: true, done: true, completedAt: ts(0, 9, 0), dueDate: today }),
+    T({ title: 'Book conference room for Wed', today: true, done: true, completedAt: ts(0, 9, 30) }),
+    T({ title: 'Review and approve PTO requests', today: true, done: true, completedAt: ts(0, 10, 45), recurring: 'weekly', recurDays: [1], dueDate: today })
   );
 
-  // Completed tasks
+  // ═══════════════════════════════════════════
+  // PROJECTS (5 projects with checklists + time)
+  // ═══════════════════════════════════════════
   store.tasks.push(
-    { id: 'p20', title: 'Send invoice to client', category: '', today: true, todayOrder: null, done: true, completedAt: new Date().toISOString(), recurring: null, recurDays: null, dueDate: today, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p21', title: 'Update team Slack channel', category: '', today: true, todayOrder: null, done: true, completedAt: new Date().toISOString(), recurring: null, recurDays: null, dueDate: today, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] }
+    T({ title: 'Website redesign', isProject: true, trackTime: true, dueDate: in14, projectOrder: 1,
+        notes: '[x] Competitor analysis\n[x] Content audit\n[x] Wireframes\n[ ] Color palette\n[ ] Mobile mockups\n[ ] Dev handoff\n[ ] QA review',
+        timeSessions: [
+          { date: oneWeekAgo, minutes: 120, note: 'Competitor research & screenshots' },
+          { date: sixDaysAgo, minutes: 90, note: 'Content audit spreadsheet' },
+          { date: fourDaysAgo, minutes: 60, note: 'Wireframe sketches' },
+          { date: twoDaysAgo, minutes: 150, note: 'Wireframes in Figma' },
+          { date: yesterday, minutes: 45, note: 'Revision pass' }
+        ]
+    }),
+    T({ title: 'DORIS CRM migration', isProject: true, trackTime: true, dueDate: in21, projectOrder: 2,
+        notes: '[x] Export legacy contacts\n[x] Map field schema\n[ ] Import test batch\n[ ] Validate data integrity\n[ ] Train team on new UI\n[ ] Go-live checklist',
+        timeSessions: [
+          { date: twoWeeksAgo, minutes: 60, note: 'Schema mapping doc' },
+          { date: oneWeekAgo, minutes: 180, note: 'Export scripts + cleanup' },
+          { date: threeDaysAgo, minutes: 90, note: 'Test import round 1' }
+        ]
+    }),
+    T({ title: 'Q2 marketing campaign', isProject: true, trackTime: true, dueDate: in30, projectOrder: 3,
+        notes: '[x] Define target audience\n[ ] Draft ad copy (3 variants)\n[ ] Design landing page\n[ ] Set up tracking pixels\n[ ] Launch A/B test',
+        timeSessions: [
+          { date: fiveDaysAgo, minutes: 60, note: 'Audience research' },
+          { date: yesterday, minutes: 30, note: 'Brainstorm session notes' }
+        ]
+    }),
+    T({ title: 'Office buildout — Phase 2', isProject: true, trackTime: true, dueDate: in45, projectOrder: 4,
+        notes: '[ ] Get contractor bids\n[ ] Select furniture vendor\n[ ] Order standing desks (8)\n[ ] Schedule electrical work\n[ ] Paint color samples',
+        timeSessions: [
+          { date: twoWeeksAgo, minutes: 30, note: 'Called 2 contractors' }
+        ]
+    }),
+    T({ title: 'Employee handbook update', isProject: true, trackTime: true, dueDate: in10, projectOrder: 5,
+        notes: '[x] Review current version\n[x] Flag outdated policies\n[ ] Draft remote work section\n[ ] Legal review\n[ ] Distribute to team',
+        timeSessions: [
+          { date: fourDaysAgo, minutes: 90, note: 'Read-through + redlines' },
+          { date: twoDaysAgo, minutes: 60, note: 'Drafted new sections' }
+        ]
+    })
   );
 
-  // Projects
+  // ═══════════════════════════════════════════
+  // ON DECK (16 tasks — mix of dates, recurring, notes)
+  // ═══════════════════════════════════════════
   store.tasks.push(
-    { id: 'p10', title: 'DORIS updates', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '[ ] Update contact fields\n[ ] Add new report template\n[x] Fix login redirect', drawer: false, drawerCategory: null, isProject: true, trackTime: true, timeSessions: [{ date: twoDaysAgo, minutes: 45, note: 'Initial research' }] },
-    { id: 'p11', title: 'Website redesign', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '[ ] Wireframes\n[ ] Color palette\n[ ] Mobile mockups\n[x] Competitor analysis\n[x] Content audit', drawer: false, drawerCategory: null, isProject: true, trackTime: true, timeSessions: [{ date: twoDaysAgo, minutes: 120, note: 'Competitor research' }, { date: yesterday, minutes: 90, note: 'Content audit' }] }
+    // Due within a week
+    T({ title: 'Schedule dentist appointment', dueDate: tomorrow }),
+    T({ title: 'Follow up with vendor on pricing', dueDate: tomorrow, recurring: 'weekly', recurDays: [2] }),
+    T({ title: 'Send quarterly tax estimate', dueDate: in2, notes: 'Check with accountant first' }),
+    T({ title: 'Review and sign lease amendment', dueDate: in3 }),
+    T({ title: 'Order new office supplies', dueDate: in4, notes: '[ ] Printer paper\n[ ] Sticky notes\n[ ] Pens\n[ ] Whiteboard markers' }),
+    T({ title: 'Lunch with Sarah — catch up', dueDate: in5 }),
+    T({ title: 'Submit expense reports', dueDate: in6, recurring: 'monthly' }),
+    // Due 1-4 weeks out
+    T({ title: 'Review insurance renewal docs', dueDate: in10 }),
+    T({ title: 'Plan team offsite agenda', dueDate: in14, notes: 'Theme ideas: strategy, culture, fun\nVenue: TBD' }),
+    T({ title: 'Prep mid-year performance reviews', dueDate: in14, trackTime: true }),
+    T({ title: 'Research new payroll provider', dueDate: in21, notes: 'Compare Gusto, Rippling, Justworks' }),
+    T({ title: 'Update company LinkedIn page', dueDate: in21 }),
+    T({ title: 'File annual report with state', dueDate: in30 }),
+    // 30+ day (hidden by default toggle)
+    T({ title: 'Renew business license', dueDate: in45 }),
+    T({ title: 'Plan holiday party', dueDate: in60 }),
+    // No date
+    T({ title: 'Clean out storage closet' }),
+    T({ title: 'Call locksmith for office rekey', dueDate: in3 }),
+    T({ title: 'Draft blog post about company culture', dueDate: in10, trackTime: true }),
+    T({ title: 'Set up new hire onboarding checklist', dueDate: nextWeek, notes: '[ ] Laptop order\n[ ] Email setup\n[ ] Slack invite\n[ ] First-week schedule' })
   );
 
-  // On Deck tasks (includes items due today to trigger Due Today popup)
-  store.tasks.push(
-    { id: 'p30', title: 'Schedule dentist appointment', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: tomorrow, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p31', title: 'Order new office supplies', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '[ ] Printer paper\n[ ] Sticky notes\n[ ] Pens', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p32', title: 'Review insurance renewal', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: nextWeek, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p33', title: 'Follow up with vendor on pricing', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: 'weekly', recurDays: null, dueDate: tomorrow, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p34', title: 'Plan team offsite agenda', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: null, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p35', title: 'Renew business license', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: farOut, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p36', title: 'Send quarterly tax estimate', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: today, projectId: null, notes: 'Check with accountant first', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p37', title: 'Review and sign lease amendment', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: today, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p38', title: 'Call bank about wire transfer', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: today, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: true, trackTime: false, timeSessions: [] }
-  );
-
-  // Drawer tasks
-  store.tasks.push(
-    { id: 'p40', title: 'Research CRM options', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: null, projectId: null, notes: '', drawer: true, drawerCategory: 'work', isProject: false, trackTime: false, timeSessions: [] },
-    { id: 'p41', title: 'Book vacation flights', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: null, projectId: null, notes: '', drawer: true, drawerCategory: 'personal', isProject: false, trackTime: false, timeSessions: [] }
-  );
-
-  // Killed tasks
-  store.killedTasks.push(
-    { id: 'p50', title: 'Old task that got killed', category: '', today: false, todayOrder: null, done: false, completedAt: null, recurring: null, recurDays: null, dueDate: yesterday, projectId: null, notes: '', drawer: false, drawerCategory: null, isProject: false, trackTime: false, timeSessions: [], killedAt: new Date().toISOString() }
-  );
-
-  // Drawer categories
+  // ═══════════════════════════════════════════
+  // DRAWER (8 tasks across 3 categories + uncategorized)
+  // ═══════════════════════════════════════════
   store.drawerCategories = {
-    work: { label: 'Work', color: '#3498db' },
-    personal: { label: 'Personal', color: '#27ae60' }
+    biz: { label: 'Business Ideas', color: '#e52e0a' },
+    home: { label: 'Home', color: '#27ae60' },
+    learn: { label: 'Learning', color: '#2456a4' }
   };
-
-  // Completion log (for Hall of Fame)
-  completionLog.push(
-    { ts: new Date().toISOString(), id: null },
-    { ts: new Date().toISOString(), id: null }
+  store.tasks.push(
+    T({ title: 'Research CRM options', drawer: true, drawerCategory: 'biz', notes: 'Look at HubSpot, Pipedrive, Close' }),
+    T({ title: 'Explore franchise opportunities', drawer: true, drawerCategory: 'biz' }),
+    T({ title: 'Brainstorm SaaS product ideas', drawer: true, drawerCategory: 'biz' }),
+    T({ title: 'Fix kitchen faucet leak', drawer: true, drawerCategory: 'home' }),
+    T({ title: 'Organize garage', drawer: true, drawerCategory: 'home' }),
+    T({ title: 'Read "The Hard Thing About Hard Things"', drawer: true, drawerCategory: 'learn' }),
+    T({ title: 'Take online SQL course', drawer: true, drawerCategory: 'learn' }),
+    T({ title: 'Book vacation flights', drawer: true, drawerCategory: null }),
+    T({ title: 'Look into warehouse space', drawer: true, drawerCategory: 'biz' }),
+    T({ title: 'Replace smoke detector batteries', drawer: true, drawerCategory: 'home' }),
+    T({ title: 'Watch Stripe Atlas walkthrough', drawer: true, drawerCategory: 'learn' }),
+    T({ title: 'Find a good barber', drawer: true, drawerCategory: null })
   );
 
-  store.nextId = 100;
+  // ═══════════════════════════════════════════
+  // KILLED (3 tasks)
+  // ═══════════════════════════════════════════
+  store.killedTasks.push(
+    T({ title: 'Old vendor contract review', dueDate: oneWeekAgo, killedAt: ts(-3, 14, 0) }),
+    T({ title: 'Attend networking mixer', dueDate: threeDaysAgo, killedAt: ts(-2, 9, 0), notes: 'Cancelled by organizer' }),
+    T({ title: 'Set up fax line (lol)', killedAt: ts(-5, 11, 0) })
+  );
+
+  // ═══════════════════════════════════════════
+  // HALL OF FAME — Backfill completion log
+  // ═══════════════════════════════════════════
+  // Today: 4 completions (the crushed tasks above)
+  completionLog.push(
+    { ts: ts(0, 8, 15) }, { ts: ts(0, 9, 0) }, { ts: ts(0, 9, 30) }, { ts: ts(0, 10, 45) }
+  );
+  // Yesterday: 6 completions (a strong day)
+  for (var i = 0; i < 6; i++) completionLog.push({ ts: ts(-1, 8 + i, 20) });
+  // 2 days ago: 3
+  for (var i = 0; i < 3; i++) completionLog.push({ ts: ts(-2, 9 + i, 0) });
+  // 3 days ago: 8 (best day!)
+  for (var i = 0; i < 8; i++) completionLog.push({ ts: ts(-3, 7 + i, 15) });
+  // 4 days ago: 5
+  for (var i = 0; i < 5; i++) completionLog.push({ ts: ts(-4, 8 + i, 30) });
+  // 5 days ago: 2
+  for (var i = 0; i < 2; i++) completionLog.push({ ts: ts(-5, 10 + i, 0) });
+  // 6 days ago: 4
+  for (var i = 0; i < 4; i++) completionLog.push({ ts: ts(-6, 9 + i, 45) });
+  // Last week scatter (for weekly totals)
+  for (var i = 0; i < 7; i++) completionLog.push({ ts: ts(-7 - i, 10, 0) });
+  // Two weeks ago cluster: 5 on one day
+  for (var i = 0; i < 5; i++) completionLog.push({ ts: ts(-14, 8 + i, 0) });
+  // Three weeks ago: 3
+  for (var i = 0; i < 3; i++) completionLog.push({ ts: ts(-21, 9 + i, 0) });
+
+  // ═══════════════════════════════════════════
+  // CREATURE UNLOCKS (spawn a few friends)
+  // ═══════════════════════════════════════════
+  store.nextId = 200;
 
   // Boot the UI
   setDate();
   render();
   renderHallOfFame();
 
+  // Spawn creatures after header settles
+  setTimeout(function() {
+    try {
+      // Spawn 4 creatures from today's crushed tasks
+      for (var c = 0; c < 4; c++) {
+        if (typeof spawnCreature === 'function') spawnCreature();
+      }
+    } catch(e) {}
+  }, 800);
+
   // Clear the localStorage gate so the popup shows every preview load
   try { localStorage.removeItem('tinyape-due-today-shown'); } catch(e) {}
-  setTimeout(() => checkDueTodayPopup(), 600);
+  setTimeout(function() { checkDueTodayPopup(); }, 1200);
 })();
 </script>
 
