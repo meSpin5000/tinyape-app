@@ -3074,6 +3074,8 @@ function openNotesSidebar(id, anchorEl) {
   if (anchorEl && window.innerWidth > 640) {
     const rect = anchorEl.getBoundingClientRect();
     const cardWidth = 420;
+    const vpH = window.innerHeight;
+    const margin = 8;
 
     // Append hidden first so we can measure actual card height
     card.style.visibility = 'hidden';
@@ -3083,17 +3085,21 @@ function openNotesSidebar(id, anchorEl) {
 
     // Horizontal: center on the task row, but keep within viewport
     let left = rect.left + (rect.width / 2) - (cardWidth / 2);
-    left = Math.max(8, Math.min(left, window.innerWidth - cardWidth - 8));
+    left = Math.max(margin, Math.min(left, window.innerWidth - cardWidth - margin));
 
     // Vertical: prefer below the task, flip above if not enough room
     let top = rect.bottom + 6;
     let flipped = false;
-    if (top + cardHeight > window.innerHeight - 8) {
+    if (top + cardHeight > vpH - margin) {
       top = rect.top - 6 - cardHeight;
       flipped = true;
       // If flipped above but would go off-screen top, clamp to top
-      if (top < 8) top = 8;
+      if (top < margin) top = margin;
     }
+
+    // Constrain max-height so card + dynamic content never overflows viewport
+    const availableHeight = vpH - top - margin;
+    card.style.maxHeight = availableHeight + 'px';
 
     card.style.top = top + 'px';
     card.style.left = left + 'px';
