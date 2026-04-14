@@ -1097,15 +1097,17 @@ document.addEventListener('visibilitychange', async () => {
     setDate();
     if (changed || dayChanged) {
       render(); renderHallOfFame();
-      // Restore any creature unlocks fetched during refresh
-      if (window._pendingCreatureUnlocks && typeof restoreCreaturesFromUnlocks === 'function') {
-        restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
-        delete window._pendingCreatureUnlocks;
-      }
       // If day changed, check for new due-today items
       if (dayChanged && typeof checkDueTodayPopup === 'function') {
         checkDueTodayPopup();
       }
+    }
+    // Always restore creatures on tab focus — they may have been lost
+    // during backgrounding, network glitches, or DOM disruption.
+    // restoreCreaturesFromUnlocks skips already-displayed ones, so this is safe.
+    if (window._pendingCreatureUnlocks && typeof restoreCreaturesFromUnlocks === 'function') {
+      restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
+      delete window._pendingCreatureUnlocks;
     }
     // Always tear down and recreate the realtime channel
     stopRealtimeSync();
@@ -1148,6 +1150,11 @@ function startPeriodicSync() {
       if (dayChanged && typeof checkDueTodayPopup === 'function') {
         checkDueTodayPopup();
       }
+    }
+    // Restore creatures if they went missing (network glitch, DOM disruption, etc.)
+    if (window._pendingCreatureUnlocks && typeof restoreCreaturesFromUnlocks === 'function') {
+      restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
+      delete window._pendingCreatureUnlocks;
     }
   }, 60000);  // 60 seconds — safety net for when realtime drops
 }

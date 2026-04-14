@@ -527,6 +527,18 @@ function renderToday() {
   const el = document.getElementById('todayList');
   const active = api.getTodayTasks();
 
+  // Auto-fix duplicate or out-of-sequence todayOrder values
+  // (can happen from sync races, Realtime overwrites, or stale DB data)
+  let needsReorder = false;
+  const seen = new Set();
+  for (const t of active) {
+    if (!t.todayOrder || seen.has(t.todayOrder)) { needsReorder = true; break; }
+    seen.add(t.todayOrder);
+  }
+  if (needsReorder && active.length > 0) {
+    active.forEach((t, i) => t.todayOrder = i + 1);
+  }
+
   if (active.length === 0) {
     el.innerHTML = `<div class="today-empty"><canvas id="emptyApeIcon" width="24" height="24" style="display:block;margin:0 auto 8px;"></canvas>Add or vote up tasks and start the day!</div>`;
     setTimeout(() => { const c = document.getElementById('emptyApeIcon'); if (c) drawPixelApe(c, 0); }, 10);
@@ -4946,6 +4958,14 @@ function restoreCreaturesFromUnlocks(unlocks) {
 
   const header = document.querySelector('header');
   if (!header) return;
+
+  // Clean up orphaned creatures — entries whose canvas is no longer in the DOM
+  // (can happen if DOM was disrupted by network glitch, etc.)
+  const orphaned = headerCreatures.filter(c => !c.el || !c.el.isConnected);
+  if (orphaned.length > 0) {
+    orphaned.forEach(c => clearTimeout(c.timer));
+    headerCreatures = headerCreatures.filter(c => c.el && c.el.isConnected);
+  }
 
   // Filter out creatures already displayed in the header
   const displayedIndices = headerCreatures.map(c => c.defIndex);
