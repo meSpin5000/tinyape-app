@@ -410,6 +410,14 @@ function render() {
   updateCounts();
   applyAllSectionCollapses();
   if (window.innerWidth <= 640) initSwipeToDelete();
+
+  // Show/hide sync banner — visible only when store is empty AND a sync is in progress
+  const banner = document.getElementById('syncBanner');
+  if (banner) {
+    const hasData = store.tasks.length > 0 || store.killedTasks.length > 0;
+    const syncing = window._isSyncing;
+    banner.style.display = (!hasData && syncing) ? '' : 'none';
+  }
 }
 
 // ─── SWIPE GESTURES (mobile) ───

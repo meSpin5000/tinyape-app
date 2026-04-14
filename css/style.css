@@ -1981,6 +1981,20 @@
     font-style: italic;
   }
 
+  /* ─── SYNC BANNER ─── */
+  .sync-banner {
+    text-align: center;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
+    animation: syncPulse 1.5s ease-in-out infinite;
+  }
+  @keyframes syncPulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+
   /* ─── TOASTS / FEEDBACK ─── */
   .toast {
     position: fixed;

@@ -304,6 +304,8 @@
   </div>
 </header>
 
+<div class="sync-banner" id="syncBanner" style="display:none;">Don't worry, TinyApe is fetching your tasks…</div>
+
 <main>
   <!-- TODAY'S LIST -->
   <div class="section-header" style="border-bottom:none; padding-bottom:0;">
@@ -671,6 +673,7 @@ function _storeFingerprint() {
 }
 
 async function refreshFromSupabase(force) {
+  window._isSyncing = true;
   try {
     // Block refresh while local writes are in-flight (unless forced)
     if (!force && window._isSafeToSync && !window._isSafeToSync()) {
@@ -707,6 +710,14 @@ async function refreshFromSupabase(force) {
 
       const dbTasks = data.tasks || [];
       const dbKilled = data.killedTasks || [];
+
+      // Sanity guard: if DB returned zero tasks but we have local data,
+      // this is likely a network/auth glitch — don't wipe local state
+      const localCount = store.tasks.filter(t => typeof t.id === 'string').length;
+      if (dbTasks.length === 0 && dbKilled.length === 0 && localCount > 0) {
+        console.warn('[Sync] ⚠️ DB returned empty but local has', localCount, 'tasks — skipping merge to prevent data loss');
+        return false;
+      }
       const dbTaskMap = new Map();       // id -> DB task object
       const dbKilledMap = new Map();     // id -> DB killed task object
       dbTasks.forEach(t => dbTaskMap.set(String(t.id), t));
@@ -849,6 +860,8 @@ async function refreshFromSupabase(force) {
   } catch (err) {
     console.error('[Sync] Error loading data:', err);
     return false;
+  } finally {
+    window._isSyncing = false;
   }
 }
 
