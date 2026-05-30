@@ -283,7 +283,11 @@ const api = {
       return _localDateStr(d);
     }
 
-    if (task.recurDays && task.recurDays.length && (task.recurring === 'weekly' || task.recurring === 'biweekly')) {
+    if (task.recurDays && task.recurDays.length && task.recurring === 'weekly') {
+      // Weekly with explicit day(s)-of-week: scan forward for the next matching
+      // day-of-week in the future. (Biweekly is handled by the plain +14 branch
+      // below so the 2-week spacing is preserved — scanning for the next matching
+      // weekday would incorrectly collapse it to a 1-week gap.)
       // Start from one day after base, scan forward for the next matching day-of-week
       // that's also in the future. Cap at 365 days to prevent infinite loops.
       const d = new Date(base);
@@ -299,27 +303,32 @@ const api = {
       }
     }
 
+    // For the plain-interval branches below, advance at least one full
+    // interval past the current due date (do/while), then keep advancing
+    // while still in the past. This ensures completing a task EARLY (due
+    // date still in the future) still moves the next occurrence forward by
+    // one interval instead of returning the same date.
     if (task.recurring === 'weekly') {
       const d = new Date(base);
-      while (d <= now) { d.setDate(d.getDate() + 7); }
+      do { d.setDate(d.getDate() + 7); } while (d <= now);
       return _localDateStr(d);
     }
 
     if (task.recurring === 'biweekly') {
       const d = new Date(base);
-      while (d <= now) { d.setDate(d.getDate() + 14); }
+      do { d.setDate(d.getDate() + 14); } while (d <= now);
       return _localDateStr(d);
     }
 
     if (task.recurring === 'monthly') {
       const d = new Date(base);
-      while (d <= now) { d.setMonth(d.getMonth() + 1); }
+      do { d.setMonth(d.getMonth() + 1); } while (d <= now);
       return _localDateStr(d);
     }
 
     if (task.recurring === 'annually') {
       const d = new Date(base);
-      while (d <= now) { d.setFullYear(d.getFullYear() + 1); }
+      do { d.setFullYear(d.getFullYear() + 1); } while (d <= now);
       return _localDateStr(d);
     }
 
@@ -563,7 +572,7 @@ function todayItemHtml(t) {
       <span class="today-number" onclick="handleRemoveFromToday(${qid(t.id)})" title="Move to On Deck"><span class="today-number-text">${t.todayOrder}</span><span class="today-number-arrow">↓</span></span>
       <div class="checkbox" onclick="handleToggleDone(${qid(t.id)})"></div>
       <div class="task-content">
-        <div class="task-title task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</div>
+        <div class="task-title task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${escHtml(t.title)}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</div>
       </div>
       ${dueHtml}
       <button class="remove-btn" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
@@ -645,7 +654,7 @@ function openArchivePopup(type) {
         html += `
           <div class="completed-task">
             <span class="done-check uncheckable" onclick="handleUncomplete(${qid(t.id)}); closeArchivePopup();" title="Undo — restore task">✓</span>
-            <span class="done-title">${t.title}${projInfo}${timeInfo}</span>
+            <span class="done-title">${escHtml(t.title)}${projInfo}${timeInfo}</span>
             ${dateStr ? `<span class="done-date">${dateStr}</span>` : ''}
           </div>`;
       });
@@ -685,7 +694,7 @@ function openArchivePopup(type) {
         html += `
           <div class="completed-task">
             <span class="done-check killed-check uncheckable" onclick="handleRestoreTask(${t._killedIdx}); closeArchivePopup();" title="Restore task">✕</span>
-            <span class="done-title killed-title">${t.title}</span>
+            <span class="done-title killed-title">${escHtml(t.title)}</span>
             ${dateStr ? `<span class="done-date">${dateStr}</span>` : ''}
           </div>`;
       });
@@ -746,7 +755,7 @@ function renderProjectsList() {
         <div class="checkbox" onclick="handleProjectComplete(${qid(t.id)})"></div>
         <div class="task-content">
           <div class="task-title task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">
-            ${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${recurInline}
+            ${escHtml(t.title)}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${recurInline}
           </div>
         </div>
         <div class="project-meta-right">
@@ -885,7 +894,7 @@ function renderBacklogItem(t) {
       <button class="vote-btn" onclick="handleVoteUp(${qid(t.id)})" title="Add to today">
         ${plusSvg}
       </button>
-      <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</span>
+      <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${escHtml(t.title)}${t.notes ? '<span class="notes-indicator">📄</span>' : ''}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurInline}</span>
       ${dateBtn}
       <div class="backlog-actions">
         <button class="remove-btn" onclick="handleDeleteTask(${qid(t.id)})" title="Delete">✕</button>
@@ -1467,7 +1476,7 @@ function renderAddModalCatAccordion() {
   catEntries.forEach(([key, cat]) => {
     const isActive = addModalDrawerCategory === key;
     html += `<span class="add-modal-cat-chip ${isActive ? 'active' : ''}" onclick="selectAddModalCategory('${key}')">
-      <span class="cat-dot" style="background:${cat.color}"></span>${cat.label}<span class="add-modal-cat-x" onclick="event.stopPropagation(); deleteAddModalCategory('${key}')" title="Remove">✕</span>
+      <span class="cat-dot" style="background:${cat.color}"></span>${escHtml(cat.label)}<span class="add-modal-cat-x" onclick="event.stopPropagation(); deleteAddModalCategory('${key}')" title="Remove">✕</span>
     </span>`;
   });
   // "Someday" option (no category)
@@ -1864,7 +1873,7 @@ function updateDrawerAddCatBtn() {
   if (!btn) return;
   if (drawerAddSelectedCat && store.drawerCategories[drawerAddSelectedCat]) {
     const cat = store.drawerCategories[drawerAddSelectedCat];
-    btn.innerHTML = `<span class="cat-dot" style="background:${cat.color}"></span>${cat.label}`;
+    btn.innerHTML = `<span class="cat-dot" style="background:${cat.color}"></span>${escHtml(cat.label)}`;
     btn.classList.add('active');
   } else {
     btn.innerHTML = '+ category';
@@ -1984,62 +1993,6 @@ function handleDrawerTrash(id) {
   render();
   showToast('Task killed');
 }
-
-let catPopoverEl = null;
-
-function handleSetDrawerCategory(taskId, dotEl) {
-  closeCatPopover();
-  const cats = store.drawerCategories;
-  const keys = Object.keys(cats);
-  if (!keys.length) return;
-
-  const rect = dotEl.getBoundingClientRect();
-  const pop = document.createElement('div');
-  pop.className = 'push-popover';
-  pop.style.position = 'fixed';
-  pop.style.left = rect.left + 'px';
-  pop.style.top = (rect.bottom + 4) + 'px';
-  pop.style.flexDirection = 'column';
-  pop.style.gap = '2px';
-  pop.style.padding = '6px';
-
-  const task = store.tasks.find(t => t.id === taskId);
-  let popHtml = '';
-  keys.forEach(key => {
-    const cat = cats[key];
-    const isActive = task && task.drawerCategory === key;
-    popHtml += `<button onclick="event.stopPropagation();applyDrawerCategory(${taskId},'${key}')" style="display:flex;align-items:center;gap:6px;text-align:left;${isActive ? 'font-weight:700;' : ''}">
-      <span class="cat-dot" style="background:${cat.color}"></span>${cat.label}
-    </button>`;
-  });
-  popHtml += `<button onclick="event.stopPropagation();applyDrawerCategory(${taskId},null)" style="color:var(--text-muted);font-size:11px;">✕ None</button>`;
-  pop.innerHTML = popHtml;
-
-  document.body.appendChild(pop);
-  catPopoverEl = pop;
-  setTimeout(() => document.addEventListener('click', closeCatPopoverOnOutside), 0);
-}
-
-function applyDrawerCategory(taskId, catKey) {
-  if (catPopoverEl) { catPopoverEl.remove(); catPopoverEl = null; }
-  document.removeEventListener('click', closeCatPopoverOnOutside);
-  api.setTaskDrawerCategory(taskId, catKey);
-  renderDrawer();
-}
-
-function closeCatPopover() {
-  if (catPopoverEl) { catPopoverEl.remove(); catPopoverEl = null; }
-  document.removeEventListener('click', closeCatPopoverOnOutside);
-}
-
-function closeCatPopoverOnOutside(e) {
-  if (catPopoverEl && !catPopoverEl.contains(e.target)) closeCatPopover();
-}
-
-// Close cat popover on Escape
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && catPopoverEl) closeCatPopover();
-});
 
 const catColorOptions = ['#e74c3c','#e67e22','#f39c12','#27ae60','#1abc9c','#3498db','#2456a4','#9b59b6','#34495e','#8B4513'];
 let selectedNewCatColor = null;
@@ -2237,7 +2190,7 @@ function renderDrawer() {
   if (catEntries.length) {
     catEntries.forEach(([key, cat]) => {
       pillsHtml += `<span class="drawer-cat-item" data-cat-key="${key}">
-        <span class="cat-dot" style="background:${cat.color};width:6px;height:6px;border-radius:50%;display:inline-block;"></span><span class="cat-label" onclick="handleRenameDrawerCategory('${key}')" title="Click to rename">${cat.label}</span><span class="cat-x" onclick="handleDeleteDrawerCategory('${key}')" title="Remove">✕</span>
+        <span class="cat-dot" style="background:${cat.color};width:6px;height:6px;border-radius:50%;display:inline-block;"></span><span class="cat-label" onclick="handleRenameDrawerCategory('${key}')" title="Click to rename">${escHtml(cat.label)}</span><span class="cat-x" onclick="handleDeleteDrawerCategory('${key}')" title="Remove">✕</span>
       </span>`;
     });
   }
@@ -2282,7 +2235,7 @@ function renderDrawer() {
       <button class="vote-btn" onclick="handleDrawerMoveToOnDeck(${qid(t.id)})" title="Move to On Deck">
         ${plusSvg}
       </button>
-      <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${t.title}${notesIcon}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurIcon}</span>
+      <span class="backlog-task-title backlog-task-title-clickable" onclick="openNotesSidebar(${qid(t.id)})">${escHtml(t.title)}${notesIcon}${t.isProject ? '<span class="project-indicator">⏱</span>' : (t.timeSessions && t.timeSessions.length) ? '<span class="time-indicator">◷</span>' : ''}${recurIcon}</span>
       ${dateMeta}
       <div class="backlog-actions">
         <button class="remove-btn" onclick="handleDrawerTrash(${qid(t.id)})" title="Delete">✕</button>
@@ -3640,7 +3593,7 @@ function notesTextToHtml(text) {
 }
 
 function escHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(str == null ? '' : str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // Convert contenteditable HTML → plain text for task.notes
@@ -5231,7 +5184,7 @@ function showDueTodayPopup(tasks) {
       <button class="vote-btn" onclick="dueTodayVoteUp(${qid(t.id)})" title="Add to today">
         ${plusSvg}
       </button>
-      <span class="due-today-title">${t.title}${notesIcon}${projectIcon}</span>
+      <span class="due-today-title">${escHtml(t.title)}${notesIcon}${projectIcon}</span>
     </div>`;
   }).join('');
 
