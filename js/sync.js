@@ -9,9 +9,34 @@
   'use strict';
 
   // ─── RETRY QUEUE ───
-  const pendingWrites = [];  // [{ task: {...}, retries: 0 }]
+  // Entries store a task ID (NOT a frozen copy). At flush time we re-resolve the
+  // LIVE task from the store so a retry always writes the task's CURRENT state.
+  // This prevents a stale snapshot (e.g. captured while a task was still
+  // incomplete) from later clobbering a newer state (e.g. after completion) and
+  // making the task "pop back" into Today. Deletes carry an explicit terminal
+  // `payload` because the killed local object isn't guaranteed to be findable.
+  const pendingWrites = [];  // [{ id, retries: 0, payload?: {...} }]
   const MAX_RETRIES = 10;
   let _inFlightSaves = 0;
+
+  // Queue (or refresh) a retry for a task id, de-duplicated by id.
+  function _queueRetry(id, payload) {
+    const existing = pendingWrites.find(e => String(e.id) === String(id));
+    if (existing) {
+      // Keep the most recent terminal payload (delete) if provided
+      if (payload) existing.payload = payload;
+      return;
+    }
+    pendingWrites.push({ id, retries: 0, payload: payload || null });
+  }
+
+  // Re-resolve the live task object for a queued id (active or killed list).
+  function _resolveLiveTask(id) {
+    const idStr = String(id);
+    return store.tasks.find(t => String(t.id) === idStr || (t._localId != null && String(t._localId) === idStr))
+        || store.killedTasks.find(t => String(t.id) === idStr || (t._localId != null && String(t._localId) === idStr))
+        || null;
+  }
 
   // ─── ECHO SUPPRESSION ───
   // When we write to DB, the realtime subscription will echo that change back.
@@ -66,21 +91,28 @@
     const stillFailing = [];
 
     for (const entry of batch) {
+      // Re-resolve the LIVE task so we never replay a stale snapshot.
+      // Deletes carry an explicit terminal payload (killed=true).
+      const taskToSave = entry.payload || _resolveLiveTask(entry.id);
+      if (!taskToSave) {
+        // Task no longer exists locally (e.g. removed) — nothing to retry.
+        continue;
+      }
       try {
-        const saved = await DB.saveTask(entry.task);
-        if (saved && saved.id !== entry.task.id) {
-          const localTask = store.tasks.find(t => t.id === entry.task.id);
-          if (localTask) localTask.id = saved.id;
-          entry.task.id = saved.id;
+        _markWritten(taskToSave.id);
+        const saved = await DB.saveTask(taskToSave);
+        if (saved && saved.id !== taskToSave.id) {
+          taskToSave._localId = taskToSave.id;
+          taskToSave.id = saved.id;
         }
-        _markWritten(saved ? saved.id : entry.task.id);
+        _markWritten(saved ? saved.id : taskToSave.id);
       } catch (err) {
-        console.error('Retry failed for task:', entry.task.title, err);
+        console.error('Retry failed for task:', taskToSave.title, err);
         entry.retries++;
         if (entry.retries < MAX_RETRIES) {
           stillFailing.push(entry);
         } else {
-          console.error('Giving up on task after max retries:', entry.task.title);
+          console.error('Giving up on task after max retries:', taskToSave.title);
         }
       }
     }
@@ -111,6 +143,22 @@
     return (Date.now() - _lastCompletionWrite < 15000);
   };
 
+  // ─── STICKY COMPLETION GUARD ───
+  // How long a locally-completed task is protected from being flipped back to
+  // not-done by an incoming DB/realtime row. Covers the gap between a fast
+  // completion and the write landing + echoing. Auto-expires so a *genuine*
+  // remote un-complete from another device still applies on a later refresh.
+  const STICKY_COMPLETE_MS = 30000;
+
+  // Returns true if `local` is a recent local completion and `incoming` would
+  // un-complete it (and isn't a kill). If so, callers must keep local state.
+  window._isStickyComplete = function(local, incoming) {
+    if (!local || !local.done || !local._completedLocallyAt) return false;
+    if (Date.now() - local._completedLocallyAt > STICKY_COMPLETE_MS) return false;
+    if (!incoming || incoming.killed) return false;        // kills always win
+    return incoming.done === false;                        // suspect un-complete
+  };
+
   // Allow app.js (handleUncomplete) to mark a completion write
   window._markCompletionWrite = function() {
     _lastCompletionWrite = Date.now();
@@ -125,7 +173,7 @@
     store.tasks.forEach(t => {
       if (typeof t.id === 'number') unsaved.add(t.id);
     });
-    pendingWrites.forEach(e => unsaved.add(e.task.id));
+    pendingWrites.forEach(e => unsaved.add(e.id));
     return unsaved;
   };
 
@@ -168,12 +216,9 @@
       }).catch(err => {
         _inFlightSaves--;
         console.error('Sync error (saveTask), queueing retry:', err);
-        const existing = pendingWrites.find(e => e.task.id === task.id);
-        if (existing) {
-          existing.task = { ...task };
-        } else {
-          pendingWrites.push({ task: { ...task }, retries: 0 });
-        }
+        // Queue by ID — flush re-resolves the LIVE task so a later state
+        // (e.g. the task getting completed) is what actually gets written.
+        _queueRetry(task.id);
       });
     }
 
@@ -223,7 +268,9 @@
       }).catch(err => {
         _inFlightSaves--;
         console.error('[Sync:DELETE] ❌ DB error:', err);
-        pendingWrites.push({ task: toSave, retries: 0 });
+        // Deletes carry an explicit terminal payload (killed=true) since the
+        // killed local object may not be re-resolvable from the active list.
+        _queueRetry(id, toSave);
       });
     };
 
@@ -344,6 +391,13 @@
     const _origToggleDone = api.toggleDone.bind(api);
     api.toggleDone = function(id) {
       const task = _origToggleDone(id);
+      if (task) {
+        // Stamp the moment of a local completion so a slow/stale DB read or
+        // realtime echo can't flip it back to not-done within the sticky window.
+        // (See window._isStickyComplete — guards against "pop back" on fast moves.)
+        if (task.done) task._completedLocallyAt = Date.now();
+        else task._completedLocallyAt = null;
+      }
       persistTask(task);
       if (task && task.done) {
         // completion event saved via logCompletion patch (called by bumpCounter)
@@ -479,7 +533,7 @@
             }).catch(err => {
               _inFlightSaves--;
               console.error('Sync error (notes), queueing retry:', err);
-              pendingWrites.push({ task: { ...task }, retries: 0 });
+              _queueRetry(task.id);
             });
           }
         }

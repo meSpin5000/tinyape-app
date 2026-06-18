@@ -8,6 +8,7 @@ package-lock.json
 
 # Dev/stress test harness — not shipped to production
 run-stress-test.js
+run-sync-test.js
 stress-test.html
 
 # Local env / Netlify cache

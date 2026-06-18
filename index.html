@@ -735,8 +735,19 @@ async function refreshFromSupabase(force) {
       function _mergeTask(local, db) {
         // Preserve timeSessions — they're in a separate table and won't be in DB task payload
         const localSessions = local.timeSessions;
+        // Sticky completion: if this is a recent local completion and the DB row
+        // would un-complete it (stale read), keep the completed state.
+        const sticky = window._isStickyComplete && window._isStickyComplete(local, db);
+        const keepDone = local.done, keepCompletedAt = local.completedAt,
+              keepToday = local.today, keepOrder = local.todayOrder,
+              keepStamp = local._completedLocallyAt;
         // Copy all DB fields onto the existing object (preserves object identity)
         Object.keys(db).forEach(k => { local[k] = db[k]; });
+        if (sticky) {
+          local.done = keepDone; local.completedAt = keepCompletedAt;
+          local.today = keepToday; local.todayOrder = keepOrder;
+          local._completedLocallyAt = keepStamp;
+        }
         // Restore timeSessions if DB didn't have them
         if (localSessions && localSessions.length && (!local.timeSessions || !local.timeSessions.length)) {
           local.timeSessions = localSessions;
@@ -959,8 +970,15 @@ function startRealtimeSync() {
         store.tasks.push(store.killedTasks[kIdx]);
         store.killedTasks.splice(kIdx, 1);
       } else if (idx !== -1) {
-        // Merge onto existing object (preserves closure references)
-        Object.keys(jsTask).forEach(k => { store.tasks[idx][k] = jsTask[k]; });
+        // Merge onto existing object (preserves closure references).
+        // Sticky completion guard: don't let a stale realtime row flip a
+        // just-completed task back to not-done (the "pop back on fast moves" bug).
+        const localTask = store.tasks[idx];
+        if (window._isStickyComplete && window._isStickyComplete(localTask, jsTask)) {
+          console.warn('[Realtime] Ignoring stale un-complete for:', row.title);
+        } else {
+          Object.keys(jsTask).forEach(k => { localTask[k] = jsTask[k]; });
+        }
       } else {
         store.tasks.push(jsTask);
       }
