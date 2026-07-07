@@ -186,7 +186,8 @@ window.TinyApeDB = {
 
       const completionLog = (completionData || []).map(evt => ({
         ts: evt.created_at,
-        id: evt.id
+        id: evt.id,
+        taskId: evt.task_id || null
       }));
 
       // Load creature unlocks
@@ -308,10 +309,14 @@ window.TinyApeDB = {
   },
 
   /**
-   * Save a completion event (task completion)
-   * @returns {Promise<Object|null>} Saved event or null
+   * Save a completion event (task completion).
+   * @param {string} [taskId] - The task this completion belongs to (P2-1).
+   * @param {string} [eventId] - Client-generated event UUID (P2-1) so the local
+   *   log entry has its id immediately and the realtime echo can be suppressed
+   *   by id. Falls back to a DB-generated id if omitted.
+   * @returns {Promise<Object|null>} Saved event { ts, id, taskId } or null
    */
-  async saveCompletionEvent() {
+  async saveCompletionEvent(taskId, eventId) {
     try {
       if (!window.supabase) {
         console.error('Supabase not initialized');
@@ -324,12 +329,16 @@ window.TinyApeDB = {
         return null;
       }
 
+      const row = {
+        user_id: userId,
+        created_at: new Date().toISOString(),
+        task_id: taskId || null
+      };
+      if (eventId) row.id = eventId;
+
       const { data, error } = await window.supabase
         .from('completion_events')
-        .insert([{
-          user_id: userId,
-          created_at: new Date().toISOString()
-        }])
+        .insert([row])
         .select();
 
       if (error) {
@@ -340,7 +349,8 @@ window.TinyApeDB = {
       if (data && data.length > 0) {
         return {
           ts: data[0].created_at,
-          id: data[0].id
+          id: data[0].id,
+          taskId: data[0].task_id || null
         };
       }
 
@@ -348,6 +358,35 @@ window.TinyApeDB = {
     } catch (err) {
       console.error('Unexpected error saving completion event:', err);
       return null;
+    }
+  },
+
+  /**
+   * Delete a specific completion event by id (P2-1) — used by uncomplete so it
+   * removes the event for THAT task, not merely the most recent one.
+   * @param {string} eventId
+   * @returns {Promise<boolean>} True if deleted
+   */
+  async deleteCompletionEventById(eventId) {
+    try {
+      if (!window.supabase || !eventId) return false;
+      const userId = await this._getUserId();
+      if (!userId) return false;
+
+      const { error } = await window.supabase
+        .from('completion_events')
+        .delete()
+        .eq('id', eventId)
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('Error deleting completion event by id:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('Error deleting completion event by id:', err);
+      return false;
     }
   },
 

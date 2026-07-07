@@ -79,7 +79,8 @@
   // When we write to DB, the realtime subscription will echo that change back.
   // We track recent writes so the realtime handler can skip our own changes.
   const _recentWrites = new Map();    // id (string) -> timestamp
-  let _lastCompletionWrite = 0;       // timestamp of last completion event write/delete
+  const _recentCompletionEvents = new Map();  // completion event id -> timestamp (P2-1)
+  let _lastCompletionWrite = 0;       // timestamp of last completion event write/delete (legacy fallback)
   let _lastCategoryWrite = 0;         // timestamp of last category write/delete
 
   function _markWritten(id) {
@@ -114,6 +115,7 @@
   window._resetSyncState = function() {
     pendingWrites.length = 0;
     _recentWrites.clear();
+    _recentCompletionEvents.clear();
     _writeChains.clear();
     _dirty.clear();
     _inFlightSaves = 0;
@@ -208,6 +210,24 @@
 
   window._isCompletionEcho = function() {
     return (Date.now() - _lastCompletionWrite < 15000);
+  };
+
+  // Per-event echo suppression (P2-1). Keyed on the completion event id so a
+  // legitimate remote completion is NOT dropped just because this device wrote
+  // a *different* completion recently (the flaw of the global timestamp above).
+  window._markCompletionEventWrite = function(eventId) {
+    if (eventId == null) return;
+    const now = Date.now();
+    _recentCompletionEvents.set(String(eventId), now);
+    _lastCompletionWrite = now;  // keep legacy guard warm for unlinked events
+    for (const [k, ts] of _recentCompletionEvents) {
+      if (now - ts > 15000) _recentCompletionEvents.delete(k);
+    }
+  };
+  window._isCompletionEventEcho = function(eventId) {
+    if (eventId == null) return false;
+    const ts = _recentCompletionEvents.get(String(eventId));
+    return ts != null && (Date.now() - ts < 15000);
   };
 
   // ─── STICKY COMPLETION GUARD ───
@@ -698,10 +718,15 @@
 
     if (typeof logCompletion !== 'undefined') {
       const _origLog = window.logCompletion;
-      window.logCompletion = function() {
-        _origLog();
-        _lastCompletionWrite = Date.now();
-        DB.saveCompletionEvent().catch(err =>
+      window.logCompletion = function(taskId) {
+        // _origLog pushes {ts, id (client uuid), taskId} and returns it.
+        const entry = _origLog(taskId);
+        const eventId = entry && entry.id;
+        // Mark by event id BEFORE the insert so the realtime INSERT echo is
+        // suppressed by id (P2-1), and persist with that explicit id + taskId.
+        if (eventId && window._markCompletionEventWrite) window._markCompletionEventWrite(eventId);
+        else _lastCompletionWrite = Date.now();
+        DB.saveCompletionEvent(taskId, eventId).catch(err =>
           console.error('Sync error (logCompletion):', err));
       };
     }

@@ -1093,8 +1093,8 @@ function updateCounts() {
   if (counter) counter.textContent = logToday;
 }
 
-function bumpCounter() {
-  if (typeof logCompletion === 'function') logCompletion();
+function bumpCounter(taskId) {
+  if (typeof logCompletion === 'function') logCompletion(taskId);
   // Update the counter number (logCompletion just pushed to completionLog)
   updateCounts();
   const counter = document.getElementById('dailyCounter');
@@ -1195,7 +1195,7 @@ function handleProjectComplete(id) {
     setTimeout(() => {
       api.toggleDone(currentId);
       try { render(); } catch(e) { console.error('render error:', e); }
-      try { bumpCounter(); } catch(e) { console.error('bumpCounter error:', e); }
+      try { bumpCounter(currentId); } catch(e) { console.error('bumpCounter error:', e); }
       try { spawnCreature(); } catch(e) { console.error('spawnCreature error:', e); }
       showToast('Project complete! 🎉');
     }, 350);
@@ -1225,7 +1225,7 @@ function handleToggleDone(id) {
       // Use the resolved current ID for the toggle
       api.toggleDone(currentId);
       try { render(); } catch(e) { console.error('render error:', e); }
-      try { bumpCounter(); } catch(e) { console.error('bumpCounter error:', e); }
+      try { bumpCounter(currentId); } catch(e) { console.error('bumpCounter error:', e); }
       try { spawnCreature(); } catch(e) { console.error('spawnCreature error:', e); }
       // Notify about recurring respawn
       if (wasRecurring) {
@@ -1240,23 +1240,41 @@ function handleToggleDone(id) {
 
 function handleUncomplete(id) {
   api.toggleDone(id);
-  // Remove the most recent completion event from local log
-  if (completionLog.length > 0) {
-    completionLog.pop();
+  // Remove the completion event for THIS task (P2-1), newest-first. Only if no
+  // linked event is found (legacy events with taskId null) do we fall back to
+  // removing the newest overall.
+  const sid = String(id);
+  let idx = -1;
+  for (let i = completionLog.length - 1; i >= 0; i--) {
+    if (completionLog[i].taskId != null && String(completionLog[i].taskId) === sid) { idx = i; break; }
   }
-  // Remove from DB — tracked through sync guard so fallback poll
-  // won't pull the not-yet-deleted event back and bounce the counter.
-  // Also suppress the realtime echo for this delete.
-  if (window.TinyApeDB && window.TinyApeDB.deleteLatestCompletionEvent) {
-    // Mark as our own write so realtime ignores the DELETE event
-    if (window._markCompletionWrite) window._markCompletionWrite();
-    if (window._trackAsyncOp) {
-      window._trackAsyncOp(() =>
-        window.TinyApeDB.deleteLatestCompletionEvent()
-      ).catch(err => console.error('Error removing completion event:', err));
-    } else {
-      window.TinyApeDB.deleteLatestCompletionEvent().catch(err =>
-        console.error('Error removing completion event:', err));
+  const usedFallback = idx === -1;
+  if (idx === -1 && completionLog.length > 0) idx = completionLog.length - 1;
+  let removedEventId = null;
+  if (idx >= 0) {
+    removedEventId = completionLog[idx].id || null;
+    completionLog.splice(idx, 1);
+  }
+  // Delete that specific event from the DB and suppress its realtime echo.
+  // Fall back to deleteLatestCompletionEvent only for legacy events with no id.
+  if (window.TinyApeDB) {
+    if (removedEventId && !usedFallback && window.TinyApeDB.deleteCompletionEventById) {
+      if (window._markCompletionEventWrite) window._markCompletionEventWrite(removedEventId);
+      const del = () => window.TinyApeDB.deleteCompletionEventById(removedEventId);
+      (window._trackAsyncOp ? window._trackAsyncOp(del) : del())
+        .catch(err => console.error('Error removing completion event:', err));
+    } else if (removedEventId && window.TinyApeDB.deleteCompletionEventById) {
+      // Fallback path found a legacy (unlinked) event but we DO know its id.
+      if (window._markCompletionEventWrite) window._markCompletionEventWrite(removedEventId);
+      const del = () => window.TinyApeDB.deleteCompletionEventById(removedEventId);
+      (window._trackAsyncOp ? window._trackAsyncOp(del) : del())
+        .catch(err => console.error('Error removing completion event:', err));
+    } else if (window.TinyApeDB.deleteLatestCompletionEvent) {
+      // No id known at all — legacy behavior.
+      if (window._markCompletionWrite) window._markCompletionWrite();
+      const del = () => window.TinyApeDB.deleteLatestCompletionEvent();
+      (window._trackAsyncOp ? window._trackAsyncOp(del) : del())
+        .catch(err => console.error('Error removing completion event:', err));
     }
   }
   render();
@@ -5013,10 +5031,16 @@ setInterval(() => {
 // Each bump of the counter is a "completion event" — tasks, checklist items, time sessions
 const completionLog = [];
 
-// Log a completion event (called alongside bumpCounter)
-function logCompletion() {
-  completionLog.push({ ts: new Date().toISOString() });
+// Log a completion event (called alongside bumpCounter).
+// taskId links the event to the task that produced it (P2-1) so an uncomplete
+// can remove the RIGHT event, not just the newest. The id is client-generated
+// (like tasks) so the local entry has its id immediately and the realtime echo
+// can be suppressed by id. Returns the pushed entry.
+function logCompletion(taskId) {
+  const entry = { ts: new Date().toISOString(), id: _uuid(), taskId: taskId || null };
+  completionLog.push(entry);
   renderHallOfFame();
+  return entry;
 }
 
 function getMonday(d) {

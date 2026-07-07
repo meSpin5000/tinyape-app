@@ -1073,10 +1073,14 @@ function startRealtimeSync() {
   channel.on('postgres_changes', {
     event: 'INSERT', schema: 'public', table: 'completion_events'
   }, async (payload) => {
-    if (window._isCompletionEcho && window._isCompletionEcho()) return;
     const row = payload.new;
+    // Per-event echo suppression (P2-1): skip only OUR OWN event by id, so a
+    // real remote completion within 15s of a local one is no longer dropped.
+    if (window._isCompletionEventEcho && window._isCompletionEventEcho(row.id)) return;
+    // Dedup: our own client-generated event may already be in the log.
+    if (completionLog.some(e => e.id === row.id)) return;
     console.log('[Realtime] Completion INSERT');
-    completionLog.push({ ts: row.created_at, id: row.id });
+    completionLog.push({ ts: row.created_at, id: row.id, taskId: row.task_id || null });
     renderHallOfFame();
     // A completion on another device means a creature was spawned — fetch and restore it
     try {
@@ -1090,16 +1094,17 @@ function startRealtimeSync() {
   channel.on('postgres_changes', {
     event: 'DELETE', schema: 'public', table: 'completion_events'
   }, (payload) => {
-    if (window._isCompletionEcho && window._isCompletionEcho()) return;
     const id = payload.old.id;
+    // Per-event echo (P2-1): skip our own delete by id.
+    if (window._isCompletionEventEcho && window._isCompletionEventEcho(id)) return;
     console.log('[Realtime] Completion DELETE:', id);
     const idx = completionLog.findIndex(e => e.id === id);
     if (idx !== -1) {
       completionLog.splice(idx, 1);
-    } else if (completionLog.length > 0) {
-      completionLog.pop();  // fallback: remove most recent
+      renderHallOfFame();
     }
-    renderHallOfFame();
+    // If the id isn't found locally, do nothing (P2-1) — the old completionLog.pop()
+    // fallback could remove the WRONG (newest) entry. A full refresh reconciles.
   });
 
   // ─── CREATURE UNLOCKS ───
