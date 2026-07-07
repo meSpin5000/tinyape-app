@@ -50,9 +50,17 @@
   }
 
   // Surface persistent write failure to the user (see index.html _setSyncFailure).
-  // Counts entries that have already exceeded FAIL_THRESHOLD retries.
+  // Counts retry-queue entries past FAIL_THRESHOLD, PLUS outbox entries stuck
+  // for over a minute — otherwise the banner would clear when a write exhausts
+  // MAX_RETRIES and drops out of pendingWrites while the durable outbox still
+  // holds (and keeps retrying) the unsynced data.
+  const OUTBOX_STUCK_MS = 60000;
   function _reportSyncHealth() {
-    const failing = pendingWrites.filter(e => (e.retries || 0) >= FAIL_THRESHOLD).length;
+    const now = Date.now();
+    let failing = pendingWrites.filter(e => (e.retries || 0) >= FAIL_THRESHOLD).length;
+    const o = _outboxRead();
+    failing += Object.values(o.tasks).concat(Object.values(o.completions))
+      .filter(e => e._addedAt && (now - e._addedAt > OUTBOX_STUCK_MS)).length;
     if (window._setSyncFailure) window._setSyncFailure(failing);
   }
 
@@ -129,7 +137,14 @@
     if (!task || task.id == null) return;
     const o = _outboxRead();
     o.userId = window._currentUserId || o.userId || null;
-    o.tasks[String(task.id)] = _outboxTaskSnapshot(task);
+    const snap = _outboxTaskSnapshot(task);
+    // Age-stamp for the stuck-write warning (_reportSyncHealth). Preserve the
+    // FIRST unsynced timestamp across re-adds so age reflects how long the
+    // entry has actually been failing. Inert extra field: _mapJsTaskToDb
+    // whitelists columns, so it never reaches the DB.
+    const prev = o.tasks[String(task.id)];
+    snap._addedAt = (prev && prev._addedAt) ? prev._addedAt : Date.now();
+    o.tasks[String(task.id)] = snap;
     _outboxWrite(o);
   }
   function _outboxRemoveTask(id) {
@@ -140,7 +155,11 @@
     if (!entry || entry.id == null) return;
     const o = _outboxRead();
     o.userId = window._currentUserId || o.userId || null;
-    o.completions[String(entry.id)] = { id: entry.id, taskId: entry.taskId || null, ts: entry.ts };
+    const prev = o.completions[String(entry.id)];
+    o.completions[String(entry.id)] = {
+      id: entry.id, taskId: entry.taskId || null, ts: entry.ts,
+      _addedAt: (prev && prev._addedAt) ? prev._addedAt : Date.now()
+    };
     _outboxWrite(o);
   }
   function _outboxRemoveCompletion(eventId) {

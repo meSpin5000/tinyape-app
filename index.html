@@ -952,7 +952,7 @@ async function refreshFromSupabase(force) {
         completionLog.length = 0;
         data.completionLog.forEach(e => {
           const ts = e.ts || e.createdAt || e.created_at;
-          if (ts) completionLog.push({ ts, id: e.id || null });
+          if (ts) completionLog.push({ ts, id: e.id || null, taskId: e.taskId || null });
         });
       }
 
@@ -1272,9 +1272,9 @@ document.addEventListener('visibilitychange', async () => {
       restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
       delete window._pendingCreatureUnlocks;
     }
-    // Always tear down and recreate the realtime channel
-    stopRealtimeSync();
-    startRealtimeSync();
+    // NOTE: the channel was already recreated BEFORE the refresh (P2-5).
+    // A second teardown here would discard the fresh subscription and reopen
+    // the missed-event window the pre-refresh resubscribe exists to close.
   }
 });
 
