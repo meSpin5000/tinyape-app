@@ -336,9 +336,11 @@ window.TinyApeDB = {
       };
       if (eventId) row.id = eventId;
 
+      // Upsert (not insert) so an outbox replay of an event that already landed
+      // is idempotent instead of failing on a duplicate primary key.
       const { data, error } = await window.supabase
         .from('completion_events')
-        .insert([row])
+        .upsert([row], { onConflict: 'id' })
         .select();
 
       if (error) {

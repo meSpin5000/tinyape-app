@@ -44,7 +44,7 @@
       _flushTimer = null;
       if (!window._flushSyncQueue) return;
       window._flushSyncQueue().then(() => {
-        if (pendingWrites.length > 0) _scheduleFlush();  // keep draining
+        if (pendingWrites.length > 0 || _outboxSize() > 0) _scheduleFlush();  // keep draining
       });
     }, delay);
   }
@@ -94,6 +94,76 @@
     }
   }
 
+  // ─── DURABLE OUTBOX (localStorage) ───
+  // In-memory queues die if the tab is discarded (Chrome Memory Saver evicts a
+  // backgrounded tab; nothing about tasks was persisted locally). The outbox
+  // mirrors every unsynced task upsert + completion event to localStorage, so a
+  // discard/reload/offline can't lose a completion — boot replays it. Tagged by
+  // user so a shared browser doesn't bleed accounts.
+  const OUTBOX_KEY = 'tinyape-outbox';
+
+  function _outboxRead() {
+    try {
+      const raw = localStorage.getItem(OUTBOX_KEY);
+      if (!raw) return { userId: null, tasks: {}, completions: {} };
+      const o = JSON.parse(raw);
+      return { userId: o.userId || null, tasks: o.tasks || {}, completions: o.completions || {} };
+    } catch (e) {
+      return { userId: null, tasks: {}, completions: {} };
+    }
+  }
+  function _outboxWrite(o) {
+    try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(o)); } catch (e) { /* private mode / quota */ }
+  }
+  // Snapshot the task fields the DB layer maps (avoid stashing transient _flags).
+  function _outboxTaskSnapshot(t) {
+    return {
+      id: t.id, title: t.title, today: t.today, todayOrder: t.todayOrder,
+      done: t.done, completedAt: t.completedAt, recurring: t.recurring,
+      recurDays: t.recurDays, dueDate: t.dueDate, notes: t.notes, drawer: t.drawer,
+      drawerCategory: t.drawerCategory, isProject: t.isProject, trackTime: t.trackTime,
+      projectOrder: t.projectOrder, killed: !!t.killed, killedAt: t.killedAt || null
+    };
+  }
+  function _outboxAddTask(task) {
+    if (!task || task.id == null) return;
+    const o = _outboxRead();
+    o.userId = window._currentUserId || o.userId || null;
+    o.tasks[String(task.id)] = _outboxTaskSnapshot(task);
+    _outboxWrite(o);
+  }
+  function _outboxRemoveTask(id) {
+    const o = _outboxRead();
+    if (o.tasks[String(id)]) { delete o.tasks[String(id)]; _outboxWrite(o); }
+  }
+  function _outboxAddCompletion(entry) {
+    if (!entry || entry.id == null) return;
+    const o = _outboxRead();
+    o.userId = window._currentUserId || o.userId || null;
+    o.completions[String(entry.id)] = { id: entry.id, taskId: entry.taskId || null, ts: entry.ts };
+    _outboxWrite(o);
+  }
+  function _outboxRemoveCompletion(eventId) {
+    const o = _outboxRead();
+    if (o.completions[String(eventId)]) { delete o.completions[String(eventId)]; _outboxWrite(o); }
+  }
+  function _outboxSize() {
+    const o = _outboxRead();
+    return Object.keys(o.tasks).length + Object.keys(o.completions).length;
+  }
+  function _outboxClear() {
+    try { localStorage.removeItem(OUTBOX_KEY); } catch (e) {}
+  }
+  window._outboxSize = _outboxSize;
+  // Snapshot for boot replay. Only returns entries for the current user (or
+  // untagged), so a shared browser can't surface another account's writes.
+  window._outboxSnapshot = function() {
+    const o = _outboxRead();
+    const uid = window._currentUserId || null;
+    if (o.userId && uid && o.userId !== uid) return { tasks: {}, completions: {} };
+    return { tasks: o.tasks, completions: o.completions };
+  };
+
   // ─── EXPOSED HELPERS ───
 
   window._syncQueue = pendingWrites;  // for debugging
@@ -122,6 +192,7 @@
     if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
     _lastCompletionWrite = 0;
     _lastCategoryWrite = 0;
+    _outboxClear();   // don't let one account's unsynced writes bleed into the next
   };
 
   // True if a task has an unsent write: a deferred add-task timer OR a queued
@@ -142,16 +213,49 @@
     if (_inFlightSaves > 0) return false;
     if (pendingWrites.length > 0) return false;
     if (_dirty.size > 0) return false;
+    if (_outboxSize() > 0) return false;   // unsynced durable writes — don't overwrite
     if (store.tasks.some(t => t._pendingSaveTimer)) return false;
     return true;
   };
 
-  // Flush all pending writes to Supabase (called before full refresh)
-  window._flushSyncQueue = async function() {
-    if (pendingWrites.length === 0) return;
-
+  // Re-send everything still sitting in the durable outbox (idempotent upserts).
+  // Called from the flush points and on boot, so a discard/offline gap self-heals.
+  window._flushOutbox = async function() {
     const DB = window.TinyApeDB;
     if (!DB) return;
+    let o = _outboxRead();
+    for (const id of Object.keys(o.tasks)) {
+      // Prefer the LIVE task (its current state) over the stored snapshot, so a
+      // flush never replays a stale snapshot over a newer state (e.g. a task
+      // completed after its first write failed). The snapshot is only the
+      // fallback for when the live task is gone (post-discard/reload).
+      const payload = _resolveLiveTask(id) || o.tasks[id];
+      try {
+        const saved = await DB.saveTask(payload);
+        if (saved) _outboxRemoveTask(saved.id != null ? saved.id : id);
+      } catch (e) { /* keep for the next flush */ }
+    }
+    o = _outboxRead();
+    for (const eid of Object.keys(o.completions)) {
+      const c = o.completions[eid];
+      try {
+        const saved = await DB.saveCompletionEvent(c.taskId, c.id);
+        if (saved) _outboxRemoveCompletion(c.id);
+      } catch (e) { /* keep */ }
+    }
+    _reportSyncHealth();
+  };
+
+  // Flush all pending writes to Supabase (called before full refresh)
+  window._flushSyncQueue = async function() {
+    const DB = window.TinyApeDB;
+    if (!DB) return;
+
+    if (pendingWrites.length === 0) {
+      // Still drain the durable outbox even when the in-memory queue is empty.
+      await window._flushOutbox();
+      return;
+    }
 
     const batch = pendingWrites.splice(0, pendingWrites.length);
     const stillFailing = [];
@@ -186,7 +290,9 @@
 
     stillFailing.forEach(e => pendingWrites.push(e));
     _reportSyncHealth();
-    if (pendingWrites.length > 0) _scheduleFlush();
+    // Also drain the durable outbox (completions + any task snapshots).
+    await window._flushOutbox();
+    if (pendingWrites.length > 0 || _outboxSize() > 0) _scheduleFlush();
   };
 
   // Track an arbitrary async op through in-flight counter
@@ -308,6 +414,7 @@
         if (!inActive) return;
         const live = _resolveLiveTask(key) || task;   // always send CURRENT state
         _markWritten(live.id);
+        _outboxAddTask(live);   // durable: survives a tab discard until the DB confirms
         _inFlightSaves++;
         return DB.saveTask(live).then(saved => {
           _inFlightSaves--;
@@ -320,6 +427,7 @@
           }
           // IDs are client-generated (P0-1) and never change — no swap needed.
           _markWritten(saved.id);
+          _outboxRemoveTask(saved.id);   // confirmed in DB — drop from the durable outbox
           // Optimistic-concurrency watermark (P0-3): remember the server
           // updated_at we just wrote so a later, OLDER DB read can't revert us.
           if (saved.updatedAt) live._lastSyncedUpdatedAt = saved.updatedAt;
@@ -377,12 +485,14 @@
       // DB and resurrect the task on the next refresh. _inFlightSaves is bumped
       // synchronously so a refresh is blocked until the kill actually lands.
       const key = String(id);
+      _outboxAddTask(toSave);   // durable kill — survives a tab discard
       const prev = _writeChains.get(key) || Promise.resolve();
       _inFlightSaves++;
       const next = prev.then(() => DB.saveTask(toSave)).then(saved => {
         _inFlightSaves--;
         if (saved) {
           _markWritten(saved.id);
+          _outboxRemoveTask(saved.id);
           console.log('[Sync:DELETE] ✅ DB confirmed kill:', saved.id, saved.title);
         } else {
           console.error('[Sync:DELETE] ❌ DB returned null — queueing retry');
@@ -730,13 +840,25 @@
       window.logCompletion = function(taskId) {
         // _origLog pushes {ts, id (client uuid), taskId} and returns it.
         const entry = _origLog(taskId);
-        const eventId = entry && entry.id;
+        if (!entry || !entry.id) { _lastCompletionWrite = Date.now(); return; }
+        const eventId = entry.id;
         // Mark by event id BEFORE the insert so the realtime INSERT echo is
-        // suppressed by id (P2-1), and persist with that explicit id + taskId.
-        if (eventId && window._markCompletionEventWrite) window._markCompletionEventWrite(eventId);
-        else _lastCompletionWrite = Date.now();
-        DB.saveCompletionEvent(taskId, eventId).catch(err =>
-          console.error('Sync error (logCompletion):', err));
+        // suppressed by id (P2-1).
+        if (window._markCompletionEventWrite) window._markCompletionEventWrite(eventId);
+        // Durable + tracked: stash in the outbox and count as in-flight so a
+        // refresh can't wipe the local completion log before this lands, and a
+        // tab discard can't lose the Hall-of-Fame entry.
+        _outboxAddCompletion(entry);
+        _inFlightSaves++;
+        DB.saveCompletionEvent(taskId, eventId).then(saved => {
+          _inFlightSaves--;
+          if (saved) _outboxRemoveCompletion(eventId);
+          else _scheduleFlush();   // stays in the outbox; retried later
+        }).catch(err => {
+          _inFlightSaves--;
+          console.error('Sync error (logCompletion), will retry:', err);
+          _scheduleFlush();
+        });
       };
     }
   }

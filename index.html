@@ -627,6 +627,9 @@ document.getElementById('loginEmail').addEventListener('keydown', (e) => {
 // ─── BOOT SEQUENCE ───
 async function boot() {
   const user = await TinyApeAuth.initAuth();
+  // Tag durable-outbox writes to the current user so a shared browser can't
+  // replay one account's unsynced writes into another.
+  window._currentUserId = user ? user.id : null;
 
   if (user) {
     await loadAndShowApp();
@@ -638,6 +641,7 @@ async function boot() {
   // Listen for auth changes (magic link callback)
   TinyApeAuth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN' && session) {
+      window._currentUserId = session.user ? session.user.id : window._currentUserId;
       await loadAndShowApp();
     } else if (event === 'SIGNED_OUT') {
       _teardownSession();
@@ -647,11 +651,44 @@ async function boot() {
   });
 }
 
+// Layer any durable-outbox writes (unsynced task states + completion events)
+// over the just-loaded store, so a tab discard / reload / offline gap can't
+// lose a completion. refreshFromSupabase already re-sends the outbox to the DB
+// before reading (flush-before-read), so in the common online case the DB is
+// already up to date; this is the safety net that also covers the offline case.
+function _applyOutboxToStore() {
+  if (!window._outboxSnapshot) return;
+  const ob = window._outboxSnapshot();
+  if (!ob) return;
+  Object.values(ob.tasks || {}).forEach(snap => {
+    const sid = String(snap.id);
+    let existing = store.tasks.find(t => String(t.id) === sid)
+                || store.killedTasks.find(t => String(t.id) === sid);
+    if (existing) {
+      Object.keys(snap).forEach(k => { existing[k] = snap[k]; });
+    } else {
+      existing = Object.assign({ timeSessions: [] }, snap);
+    }
+    store.tasks = store.tasks.filter(t => String(t.id) !== sid);
+    store.killedTasks = store.killedTasks.filter(t => String(t.id) !== sid);
+    if (snap.killed) store.killedTasks.push(existing);
+    else store.tasks.push(existing);
+  });
+  Object.values(ob.completions || {}).forEach(c => {
+    if (!completionLog.some(e => e.id === c.id)) {
+      completionLog.push({ ts: c.ts, id: c.id, taskId: c.taskId || null });
+    }
+  });
+  // Re-send anything still unsynced (best-effort; no-op if already drained).
+  if (window._flushOutbox) window._flushOutbox();
+}
+
 async function loadAndShowApp() {
   document.getElementById('loginPage').style.display = 'none';
   document.getElementById('loadingPage').style.display = 'flex';
 
   await refreshFromSupabase(true);  // force on initial load
+  _applyOutboxToStore();            // restore unsynced completions after a discard
 
   document.getElementById('loadingPage').style.display = 'none';
   document.getElementById('appPage').style.display = 'block';
