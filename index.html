@@ -1064,6 +1064,23 @@ function startRealtimeSync() {
     renderHallOfFame();
   });
 
+  // ─── CREATURE UNLOCKS ───
+  // A creature unlocked on another device pushes here; restore just that one.
+  // restoreCreaturesFromUnlocks skips any creature already on screen, so our
+  // OWN unlock echoing back is a no-op (no dedicated echo suppression needed).
+  channel.on('postgres_changes', {
+    event: 'INSERT', schema: 'public', table: 'creature_unlocks'
+  }, (payload) => {
+    const row = payload.new;
+    if (!row || typeof restoreCreaturesFromUnlocks !== 'function') return;
+    console.log('[Realtime] Creature unlock INSERT:', row.creature_index);
+    restoreCreaturesFromUnlocks([{
+      creatureIndex: row.creature_index,
+      unlockedAt: row.unlocked_at,
+      id: row.id
+    }]);
+  });
+
   // ─── DRAWER CATEGORIES ───
   channel.on('postgres_changes', {
     event: '*', schema: 'public', table: 'drawer_categories'
