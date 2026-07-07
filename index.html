@@ -726,9 +726,10 @@ async function refreshFromSupabase(force) {
 
       // Helper: check if a task should be protected from DB overwrite
       function _isProtected(id) {
+        const sid = String(id);
         if (window._isEcho && window._isEcho(id)) return true;
-        if (typeof schedulePopoverTaskId !== 'undefined' && schedulePopoverTaskId !== null && id === schedulePopoverTaskId) return true;
-        if (typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null && id === currentNotesTaskId) return true;
+        if (typeof schedulePopoverTaskId !== 'undefined' && schedulePopoverTaskId !== null && sid === String(schedulePopoverTaskId)) return true;
+        if (typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null && sid === String(currentNotesTaskId)) return true;
         return false;
       }
 
@@ -771,14 +772,15 @@ async function refreshFromSupabase(force) {
       // True only when the user has THIS exact task's editor open — the one case
       // where we don't want a remote change (even a kill) yanked out from under them.
       const _beingEdited = (id) =>
-        (typeof schedulePopoverTaskId !== 'undefined' && schedulePopoverTaskId !== null && id === schedulePopoverTaskId) ||
-        (typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null && id === currentNotesTaskId);
+        (typeof schedulePopoverTaskId !== 'undefined' && schedulePopoverTaskId !== null && String(id) === String(schedulePopoverTaskId)) ||
+        (typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null && String(id) === String(currentNotesTaskId));
       store.tasks = store.tasks.filter(local => {
         const sid = String(local.id);
         // Not-yet-persisted task (deferred add-task timer or queued retry) —
         // keep as-is so a refresh doesn't drop it before its write lands.
         // (P0-1: replaces the old numeric-id check; IDs are now UUIDs.)
         if (window._isPendingSave && window._isPendingSave(local.id)) {
+          local._missingFromDb = 0;
           activeIds.add(sid);
           return true;
         }
@@ -798,6 +800,7 @@ async function refreshFromSupabase(force) {
 
         if (_isProtected(local.id)) {
           // Protected: keep local state, just mark as seen
+          local._missingFromDb = 0;
           activeIds.add(sid);
           return true;
         }
@@ -814,12 +817,26 @@ async function refreshFromSupabase(force) {
         if (dbVersion) {
           // Normal merge
           _mergeTask(local, dbVersion);
+          local._missingFromDb = 0;
           activeIds.add(sid);
           return true;
         }
 
-        // Task exists locally but not in DB — deleted on another device
-        return false;
+        // Task is synced (UUID) but missing from this DB fetch. This is almost
+        // never a real remote deletion — soft deletes come back as killed rows
+        // (handled above) and nothing in the app hard-deletes. Far more likely
+        // a transient anomaly: a partial/glitchy query, or a write that hasn't
+        // landed. Two-strike tombstone (P1-1): keep it this cycle, drop it only
+        // if it's still missing on the NEXT refresh. The counter is reset above
+        // whenever the task reappears, is pending, or is being edited.
+        local._missingFromDb = (local._missingFromDb || 0) + 1;
+        if (local._missingFromDb >= 2) {
+          console.warn('[Sync] Task missing from DB for 2 consecutive refreshes — removing:', local.title);
+          return false;
+        }
+        console.warn('[Sync] Task missing from DB (strike 1) — keeping this cycle:', local.title);
+        activeIds.add(sid);
+        return true;
       });
 
       // 2. Add new tasks from DB that aren't in local store yet

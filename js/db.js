@@ -100,13 +100,15 @@ window.TinyApeDB = {
     try {
       if (!window.supabase) {
         console.error('Supabase not initialized');
-        return { tasks: [], killedTasks: [], drawerCategories: {}, completionLog: [], creatureUnlocks: [] };
+        // Null (not empty) so a transient failure doesn't wipe local state (P2-4).
+        return { tasks: null, killedTasks: null, drawerCategories: null, completionLog: null, creatureUnlocks: null };
       }
 
       const userId = await this._getUserId();
       if (!userId) {
         console.error('No user logged in');
-        return { tasks: [], killedTasks: [], drawerCategories: {}, completionLog: [], creatureUnlocks: [] };
+        // Null (not empty) so an expired/refreshing session doesn't wipe local state (P2-4).
+        return { tasks: null, killedTasks: null, drawerCategories: null, completionLog: null, creatureUnlocks: null };
       }
 
       // Load tasks
@@ -204,16 +206,21 @@ window.TinyApeDB = {
         id: unlock.id
       }));
 
+      // Null convention (P2-4): return null for any SECONDARY collection whose
+      // query errored, so refreshFromSupabase skips it instead of overwriting
+      // local state with an empty result. (tasks/killedTasks are protected
+      // separately by the empty-result sanity guard + two-strike tombstone.)
       return {
         tasks,
         killedTasks,
-        drawerCategories,
-        completionLog,
-        creatureUnlocks
+        drawerCategories: categoriesError ? null : drawerCategories,
+        completionLog: completionError ? null : completionLog,
+        creatureUnlocks: creatureError ? null : creatureUnlocks
       };
     } catch (err) {
       console.error('Unexpected error loading all data:', err);
-      return { tasks: [], killedTasks: [], drawerCategories: {}, completionLog: [], creatureUnlocks: [] };
+      // Total failure — null everything so nothing local gets wiped.
+      return { tasks: null, killedTasks: null, drawerCategories: null, completionLog: null, creatureUnlocks: null };
     }
   },
 
