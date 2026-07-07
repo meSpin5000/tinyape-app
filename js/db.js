@@ -489,10 +489,12 @@ window.TinyApeDB = {
       let result;
 
       if (category.id) {
-        // Update existing category
+        // Update existing category. Never touch the immutable text `key` column
+        // (P2-5) — only label/color change on rename/recolor.
+        const updateData = { label: category.label, color: category.color, user_id: userId };
         const { data, error } = await window.supabase
           .from('drawer_categories')
-          .update(catData)
+          .update(updateData)
           .eq('id', category.id)
           .eq('user_id', userId)
           .select();

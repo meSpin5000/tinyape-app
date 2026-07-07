@@ -531,8 +531,28 @@ async function handleLogin() {
   }
 }
 
+// Tear down all session state on sign-out so a shared/kiosk device doesn't
+// leak the previous user's data into the next login (P2-3): stop realtime +
+// the poll, wipe the in-memory store, completion log, sync queues, day tracker,
+// and any on-screen creatures.
+function _teardownSession() {
+  try { stopRealtimeSync(); } catch(e) {}
+  if (_syncInterval) { clearInterval(_syncInterval); _syncInterval = null; }
+  if (window._resetSyncState) window._resetSyncState();
+  if (typeof store !== 'undefined' && store) {
+    store.tasks.length = 0;
+    store.killedTasks.length = 0;
+    store.drawerCategories = {};
+  }
+  if (typeof completionLog !== 'undefined' && completionLog) completionLog.length = 0;
+  _lastKnownDay = (typeof _localDateStr === 'function') ? _localDateStr() : new Date().toLocaleDateString('en-CA');
+  delete window._pendingCreatureUnlocks;
+  document.querySelectorAll('.pixel-creature').forEach(el => el.remove());
+}
+
 async function handleSignOut() {
   await TinyApeAuth.signOut();
+  _teardownSession();
   document.getElementById('appPage').style.display = 'none';
   document.getElementById('loginPage').style.display = 'flex';
 }
@@ -620,6 +640,7 @@ async function boot() {
     if (event === 'SIGNED_IN' && session) {
       await loadAndShowApp();
     } else if (event === 'SIGNED_OUT') {
+      _teardownSession();
       document.getElementById('appPage').style.display = 'none';
       document.getElementById('loginPage').style.display = 'flex';
     }
@@ -1185,10 +1206,14 @@ document.addEventListener('visibilitychange', async () => {
     // Check if the day rolled over while backgrounded
     const dayChanged = checkDayChanged();
 
-    // Always do a full refresh + reconnect when tab becomes visible.
-    // Mobile browsers kill WebSocket connections while backgrounded,
-    // and _realtimeConnected can be stale (Supabase thinks it's connected
-    // but the underlying socket is dead).
+    // Resubscribe FIRST, then refresh (P2-5). Mobile browsers kill WebSocket
+    // connections while backgrounded, and _realtimeConnected can be stale.
+    // Recreating the channel before the (awaited) refresh closes the window
+    // where a change lands between the refresh read and the resubscribe and
+    // would otherwise be missed until the next poll.
+    stopRealtimeSync();
+    startRealtimeSync();
+
     const changed = await refreshFromSupabase(true);
     setDate();
     if (changed || dayChanged) {
@@ -1257,7 +1282,15 @@ function startPeriodicSync() {
   }, 60000);  // 60 seconds — safety net for when realtime drops
 }
 
-boot();
+boot().catch(err => {
+  // A throw before boot's own error handling would otherwise strand the user
+  // on the loading spinner (P2-3). Fall back to the login page.
+  console.error('[Boot] Fatal error:', err);
+  const lp = document.getElementById('loadingPage'); if (lp) lp.style.display = 'none';
+  const ap = document.getElementById('appPage'); if (ap) ap.style.display = 'none';
+  const login = document.getElementById('loginPage'); if (login) login.style.display = 'flex';
+  if (typeof showToast === 'function') showToast('Something went wrong loading TinyApe. Please refresh.');
+});
 </script>
 
 </body>

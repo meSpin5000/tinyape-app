@@ -84,12 +84,12 @@
 
   function _markWritten(id) {
     if (id == null) return;
-    _recentWrites.set(String(id), Date.now());
-    // Prune entries older than 15 seconds
-    if (_recentWrites.size > 50) {
-      for (const [key, ts] of _recentWrites) {
-        if (Date.now() - ts > 15000) _recentWrites.delete(key);
-      }
+    const now = Date.now();
+    _recentWrites.set(String(id), now);
+    // Prune entries older than 15 seconds on every call (P2-5) so the map
+    // never accumulates stale ids. Cheap — the map holds only recent writes.
+    for (const [key, ts] of _recentWrites) {
+      if (now - ts > 15000) _recentWrites.delete(key);
     }
   }
 
@@ -106,6 +106,20 @@
 
   window._hasPendingWrites = function() {
     return pendingWrites.length > 0 || _inFlightSaves > 0 || _dirty.size > 0;
+  };
+
+  // Wipe all in-memory sync state (P2-3). Called on sign-out so the next user
+  // on a shared device doesn't inherit the previous user's queued writes,
+  // echo marks, or write chains.
+  window._resetSyncState = function() {
+    pendingWrites.length = 0;
+    _recentWrites.clear();
+    _writeChains.clear();
+    _dirty.clear();
+    _inFlightSaves = 0;
+    if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+    _lastCompletionWrite = 0;
+    _lastCategoryWrite = 0;
   };
 
   // True if a task has an unsent write: a deferred add-task timer OR a queued
@@ -268,10 +282,10 @@
         // re-queues a fresh trailing write.
         _dirty.delete(key);
         const inActive = store.tasks.some(t => String(t.id) === key);
-        const inKilled = store.killedTasks.some(t => String(t.id) === key);
-        // Deleted since queued — the deleteTask patch owns its own kill write.
-        // Don't resurrect it with a stale active-state upsert.
-        if (!inActive && inKilled) return;
+        // Gone from the active list since this write was queued — either killed
+        // (the deleteTask patch owns that write) or removed outright (e.g. an
+        // undone recurring respawn, P2-2). Skip so we never re-create it.
+        if (!inActive) return;
         const live = _resolveLiveTask(key) || task;   // always send CURRENT state
         _markWritten(live.id);
         _inFlightSaves++;
@@ -487,9 +501,20 @@
       if (task && task.done) {
         // completion event saved via logCompletion patch (called by bumpCounter)
         persistTodayOrder();
+        // Persist the recurring respawn by its explicit link (P2-2), not by a
+        // title match that could grab the wrong task when titles collide.
         const respawned = store.tasks.find(t =>
-          t.title === task.title && !t.done && t.id !== task.id && t.recurring);
+          t._respawnOf === task.id && !t.done && t.recurring);
         if (respawned) persistTask(respawned);
+      } else if (task && task._removedRespawnId) {
+        // Uncomplete removed the respawn locally. If it already landed in the
+        // DB, hard-delete it (a never-completed fresh task — not a soft "kill",
+        // so it shouldn't show in the Killed archive). If it never synced, the
+        // write-chain guard above already skipped its create, so this no-ops.
+        const rid = task._removedRespawnId;
+        delete task._removedRespawnId;
+        _markWritten(rid);  // suppress the realtime DELETE echo on this device
+        DB.deleteTask(rid).catch(err => console.error('Sync error (delete respawn):', err));
       }
       return task;
     };
@@ -558,7 +583,10 @@
       _origRenameCat(key, newLabel);
       const cat = store.drawerCategories[key];
       if (cat) {
-        DB.saveDrawerCategory({ id: key, key: cat.id || key, label: cat.label, color: cat.color, sortOrder: Object.keys(store.drawerCategories).indexOf(key) })
+        // P2-5: only send id + label + color. The old payload wrote the UUID
+        // into the text `key` column via cat.id. saveDrawerCategory's update
+        // path no longer touches `key` at all.
+        DB.saveDrawerCategory({ id: key, label: cat.label, color: cat.color })
           .catch(err => console.error('Sync error (renameDrawerCategory):', err));
       }
     };

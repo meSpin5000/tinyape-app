@@ -244,6 +244,18 @@ const api = {
       task.completedAt = null;
       task.today = false;
       task.todayOrder = null;
+      // Remove the recurring respawn this completion created, so undoing a
+      // completion doesn't leave a duplicate in On Deck (P2-2). Matched by the
+      // explicit _respawnOf link, not by title.
+      if (task.recurring) {
+        const respIdx = store.tasks.findIndex(t => t._respawnOf === task.id && !t.done);
+        if (respIdx !== -1) {
+          const resp = store.tasks[respIdx];
+          store.tasks.splice(respIdx, 1);
+          // Signal the sync layer to delete it from the DB if it already landed.
+          task._removedRespawnId = resp.id;
+        }
+      }
     }
     return task;
   },
@@ -277,7 +289,10 @@ const api = {
       isProject: original.isProject || false,
       trackTime: original.trackTime || false,
       timeSessions: [],  // fresh — don't carry over logged time
-      projectOrder: original.projectOrder || null
+      projectOrder: original.projectOrder || null,
+      // Link back to the completion that created this respawn (P2-2) so an
+      // uncomplete can find and remove exactly this duplicate — not guess by title.
+      _respawnOf: original.id
     };
     store.tasks.push(newTask);
     return newTask;
