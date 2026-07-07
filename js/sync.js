@@ -370,8 +370,16 @@
       const toSave = { ...task, killed: true, killedAt: new Date().toISOString() };
       _markWritten(id);
       _origDeleteTask(id);
+      // Serialize the kill onto the task's write chain (fixes "deleted-from-Today
+      // task pops back until the next sync"). The kill MUST run after any
+      // pending/in-flight killed=false write for this task (e.g. a recent reorder
+      // via persistTodayOrder); otherwise that older write can land last in the
+      // DB and resurrect the task on the next refresh. _inFlightSaves is bumped
+      // synchronously so a refresh is blocked until the kill actually lands.
+      const key = String(id);
+      const prev = _writeChains.get(key) || Promise.resolve();
       _inFlightSaves++;
-      DB.saveTask(toSave).then(saved => {
+      const next = prev.then(() => DB.saveTask(toSave)).then(saved => {
         _inFlightSaves--;
         if (saved) {
           _markWritten(saved.id);
@@ -391,6 +399,7 @@
         _queueRetry(id, toSave);
         _scheduleFlush();
       });
+      _writeChains.set(key, next.catch(() => {}));
     };
 
     // ─── Patch voteUp ───
