@@ -1995,6 +1995,17 @@
     50% { opacity: 1; }
   }
 
+  /* ─── SYNC FAILURE BANNER ─── */
+  /* Persistent (non-animated) warning shown when writes keep failing after
+     several retries. Neutral styling using the brand red — restyle freely. */
+  .sync-fail-banner {
+    text-align: center;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent-red);
+  }
+
   /* ─── TOASTS / FEEDBACK ─── */
   .toast {
     position: fixed;

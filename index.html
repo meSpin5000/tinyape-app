@@ -305,6 +305,7 @@
 </header>
 
 <div class="sync-banner" id="syncBanner" style="display:none;">Don't worry, TinyApe is fetching your tasks…</div>
+<div class="sync-fail-banner" id="syncFailBanner" style="display:none;">⚠ Some changes haven't saved yet. TinyApe is retrying…</div>
 
 <main>
   <!-- TODAY'S LIST -->
@@ -1091,13 +1092,24 @@ function checkDayChanged() {
   return false;
 }
 
+// ─── SYNC FAILURE INDICATOR ───
+// Called by sync.js when writes keep failing past the retry threshold.
+// count > 0 shows a persistent warning; 0 hides it (queue drained / recovered).
+window._setSyncFailure = function(count) {
+  const el = document.getElementById('syncFailBanner');
+  if (!el) return;
+  el.style.display = (count > 0) ? 'block' : 'none';
+};
+
 // ─── CROSS-DEVICE SYNC (visibility change) ───
 document.addEventListener('visibilitychange', async () => {
   if (document.getElementById('appPage').style.display === 'none') return;
 
   if (document.visibilityState === 'hidden') {
-    // Mobile safety: flush notes + pending writes before tab kill
-    if (typeof saveCurrentNotes === 'function') saveCurrentNotes();
+    // Mobile safety: flush deferred writes (300ms add-task timer + notes
+    // debounce) IMMEDIATELY, then drain the retry queue, before tab kill.
+    if (window._flushPendingSaves) window._flushPendingSaves();
+    else if (typeof saveCurrentNotes === 'function') saveCurrentNotes();
     if (window._flushSyncQueue) {
       try { await window._flushSyncQueue(); } catch(e) { /* best-effort */ }
     }
@@ -1135,7 +1147,9 @@ document.addEventListener('visibilitychange', async () => {
 
 // ─── BEFORE UNLOAD SAFETY NET ───
 window.addEventListener('beforeunload', () => {
-  if (typeof saveCurrentNotes === 'function') saveCurrentNotes();
+  // Fire deferred writes synchronously, then best-effort drain the queue.
+  if (window._flushPendingSaves) window._flushPendingSaves();
+  else if (typeof saveCurrentNotes === 'function') saveCurrentNotes();
   if (window._flushSyncQueue) {
     window._flushSyncQueue().catch(() => {});
   }

@@ -19,6 +19,34 @@
   const MAX_RETRIES = 10;
   let _inFlightSaves = 0;
 
+  // ─── SCHEDULED FLUSH (with backoff) ───
+  // A queued retry used to wait until the next refresh/visibility change (up to
+  // 5 min). This debounced flush drains the queue on its own so a failed save
+  // self-heals without user action. Delay escalates with the worst retry count.
+  const FLUSH_BACKOFF = [5000, 15000, 60000];  // 5s → 15s → 60s
+  const FAIL_THRESHOLD = 3;                     // retries before we warn the user
+  let _flushTimer = null;
+
+  function _scheduleFlush() {
+    if (_flushTimer) return;
+    const maxRetries = pendingWrites.reduce((m, e) => Math.max(m, e.retries || 0), 0);
+    const delay = FLUSH_BACKOFF[Math.min(maxRetries, FLUSH_BACKOFF.length - 1)];
+    _flushTimer = setTimeout(() => {
+      _flushTimer = null;
+      if (!window._flushSyncQueue) return;
+      window._flushSyncQueue().then(() => {
+        if (pendingWrites.length > 0) _scheduleFlush();  // keep draining
+      });
+    }, delay);
+  }
+
+  // Surface persistent write failure to the user (see index.html _setSyncFailure).
+  // Counts entries that have already exceeded FAIL_THRESHOLD retries.
+  function _reportSyncHealth() {
+    const failing = pendingWrites.filter(e => (e.retries || 0) >= FAIL_THRESHOLD).length;
+    if (window._setSyncFailure) window._setSyncFailure(failing);
+  }
+
   // Queue (or refresh) a retry for a task id, de-duplicated by id.
   function _queueRetry(id, payload) {
     const existing = pendingWrites.find(e => String(e.id) === String(id));
@@ -101,11 +129,15 @@
       try {
         _markWritten(taskToSave.id);
         const saved = await DB.saveTask(taskToSave);
-        if (saved && saved.id !== taskToSave.id) {
+        // A null return is a SILENT failure (RLS/constraint/400/expired session).
+        // Treat it exactly like a thrown error so the entry keeps retrying
+        // instead of being dropped and lost on reload.
+        if (!saved) throw new Error('saveTask returned null (soft failure)');
+        if (saved.id !== taskToSave.id) {
           taskToSave._localId = taskToSave.id;
           taskToSave.id = saved.id;
         }
-        _markWritten(saved ? saved.id : taskToSave.id);
+        _markWritten(saved.id);
       } catch (err) {
         console.error('Retry failed for task:', taskToSave.title, err);
         entry.retries++;
@@ -118,6 +150,8 @@
     }
 
     stillFailing.forEach(e => pendingWrites.push(e));
+    _reportSyncHealth();
+    if (pendingWrites.length > 0) _scheduleFlush();
   };
 
   // Track an arbitrary async op through in-flight counter
@@ -204,14 +238,19 @@
       _inFlightSaves++;
       DB.saveTask(task).then(saved => {
         _inFlightSaves--;
-        if (saved) {
-          _markWritten(saved.id);  // also mark the UUID (may differ from local ID)
-          if (saved.id !== task.id) {
-            const oldId = task.id;
-            task._localId = oldId;
-            task.id = saved.id;
-            _markWritten(saved.id);
-          }
+        // A null return is a silent failure — queue a retry, don't drop it.
+        if (!saved) {
+          console.error('Sync error (saveTask returned null), queueing retry:', task.title);
+          _queueRetry(task.id);
+          _scheduleFlush();
+          return;
+        }
+        _markWritten(saved.id);  // also mark the UUID (may differ from local ID)
+        if (saved.id !== task.id) {
+          const oldId = task.id;
+          task._localId = oldId;
+          task.id = saved.id;
+          _markWritten(saved.id);
         }
       }).catch(err => {
         _inFlightSaves--;
@@ -219,6 +258,7 @@
         // Queue by ID — flush re-resolves the LIVE task so a later state
         // (e.g. the task getting completed) is what actually gets written.
         _queueRetry(task.id);
+        _scheduleFlush();
       });
     }
 
@@ -263,7 +303,11 @@
           _markWritten(saved.id);
           console.log('[Sync:DELETE] ✅ DB confirmed kill:', saved.id, saved.title);
         } else {
-          console.error('[Sync:DELETE] ❌ DB returned null — save may have failed');
+          console.error('[Sync:DELETE] ❌ DB returned null — queueing retry');
+          // Silent failure: the kill never persisted. Retry with the terminal
+          // payload so the task doesn't resurrect on reload.
+          _queueRetry(id, toSave);
+          _scheduleFlush();
         }
       }).catch(err => {
         _inFlightSaves--;
@@ -271,6 +315,7 @@
         // Deletes carry an explicit terminal payload (killed=true) since the
         // killed local object may not be re-resolvable from the active list.
         _queueRetry(id, toSave);
+        _scheduleFlush();
       });
     };
 
@@ -504,6 +549,21 @@
       persistTask(task);
     };
 
+    // ─── Flush delayed-write windows immediately (before tab hide/close) ───
+    // Two writes are deferred: the 300ms add-task timer (task._pendingSaveTimer)
+    // and the notes debounce. On mobile the tab is often killed while hidden,
+    // firing neither. This drains both synchronously so nothing is lost.
+    window._flushPendingSaves = function() {
+      store.tasks.forEach(t => {
+        if (t._pendingSaveTimer) {
+          clearTimeout(t._pendingSaveTimer);
+          delete t._pendingSaveTimer;
+          persistTask(t);   // persistTask re-marks + saves the live task
+        }
+      });
+      if (window._flushNotesSave) window._flushNotesSave();
+    };
+
     console.log('✓ Sync layer active — mutations will persist to Supabase');
   }
 
@@ -518,26 +578,43 @@
     if (!DB) return;
 
     const _origSaveNotes = window.saveCurrentNotes;
+
+    // The actual DB write for the currently-open notes task. Shared by the
+    // debounced timer and the immediate flush-on-hide path.
+    function _doNotesSave() {
+      if (typeof currentNotesTaskId === 'undefined' || currentNotesTaskId === null) return;
+      const task = store.tasks.find(t => t.id === currentNotesTaskId);
+      if (!task) return;
+      _markWritten(task.id);
+      _inFlightSaves++;
+      DB.saveTask(task).then(saved => {
+        _inFlightSaves--;
+        if (saved) { _markWritten(saved.id); return; }
+        // Silent failure — queue a retry so the notes edit isn't lost.
+        console.error('Sync error (notes returned null), queueing retry:', task.title);
+        _queueRetry(task.id);
+        _scheduleFlush();
+      }).catch(err => {
+        _inFlightSaves--;
+        console.error('Sync error (notes), queueing retry:', err);
+        _queueRetry(task.id);
+        _scheduleFlush();
+      });
+    }
+
+    // Flush the pending notes debounce immediately (used before tab kill).
+    window._flushNotesSave = function() {
+      clearTimeout(window._notesSyncTimer);
+      window._notesSyncTimer = null;
+      _doNotesSave();
+    };
+
     window.saveCurrentNotes = function() {
       _origSaveNotes();
       clearTimeout(window._notesSyncTimer);
-      window._notesSyncTimer = setTimeout(() => {
-        if (typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null) {
-          const task = store.tasks.find(t => t.id === currentNotesTaskId);
-          if (task) {
-            _markWritten(task.id);
-            _inFlightSaves++;
-            DB.saveTask(task).then(saved => {
-              _inFlightSaves--;
-              if (saved) _markWritten(saved.id);
-            }).catch(err => {
-              _inFlightSaves--;
-              console.error('Sync error (notes), queueing retry:', err);
-              _queueRetry(task.id);
-            });
-          }
-        }
-      }, 2000);
+      // 800ms (was 2000ms): notes saves are cheap row updates; a shorter
+      // debounce narrows the window where a tab kill loses the edit.
+      window._notesSyncTimer = setTimeout(_doNotesSave, 800);
     };
   }
 
