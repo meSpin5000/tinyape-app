@@ -11,6 +11,7 @@ run-stress-test.js
 run-sync-test.js
 run-phase1-test.js
 run-phase2-test.js
+run-phase3-test.js
 stress-test.html
 
 # Local env / Netlify cache

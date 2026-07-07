@@ -734,6 +734,15 @@ async function refreshFromSupabase(force) {
 
       // Merge fields from DB onto an existing local task object (in-place)
       function _mergeTask(local, db) {
+        // Optimistic concurrency (P0-3): if this DB row is OLDER than the last
+        // write we confirmed for this task, it's a stale read (an out-of-order
+        // or slower write elsewhere) — don't let it revert our newer state.
+        // Kills bypass this and always apply. Server timestamps only, so no
+        // client/server clock-skew ambiguity.
+        if (!db.killed && local._lastSyncedUpdatedAt && db.updatedAt
+            && Date.parse(db.updatedAt) < Date.parse(local._lastSyncedUpdatedAt)) {
+          return;
+        }
         // Preserve timeSessions — they're in a separate table and won't be in DB task payload
         const localSessions = local.timeSessions;
         // Sticky completion: if this is a recent local completion and the DB row
@@ -753,10 +762,17 @@ async function refreshFromSupabase(force) {
         if (localSessions && localSessions.length && (!local.timeSessions || !local.timeSessions.length)) {
           local.timeSessions = localSessions;
         }
+        // Advance the optimistic-concurrency watermark to the applied row.
+        if (db.updatedAt) local._lastSyncedUpdatedAt = db.updatedAt;
       }
 
       // 1. Update existing active tasks + handle killed tasks from DB
       const activeIds = new Set();
+      // True only when the user has THIS exact task's editor open — the one case
+      // where we don't want a remote change (even a kill) yanked out from under them.
+      const _beingEdited = (id) =>
+        (typeof schedulePopoverTaskId !== 'undefined' && schedulePopoverTaskId !== null && id === schedulePopoverTaskId) ||
+        (typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null && id === currentNotesTaskId);
       store.tasks = store.tasks.filter(local => {
         const sid = String(local.id);
         // Not-yet-persisted task (deferred add-task timer or queued retry) —
@@ -769,6 +785,16 @@ async function refreshFromSupabase(force) {
 
         const dbVersion = dbTaskMap.get(sid);
         const dbKilledVersion = dbKilledMap.get(sid);
+
+        // A remote kill wins even inside the echo window (P0-3b, mirrors the
+        // realtime handler) — unless the user is actively editing this task.
+        if (dbKilledVersion && !_beingEdited(local.id)) {
+          _mergeTask(local, dbKilledVersion);
+          if (!store.killedTasks.some(k => String(k.id) === sid)) {
+            store.killedTasks.push(local);
+          }
+          return false; // remove from active
+        }
 
         if (_isProtected(local.id)) {
           // Protected: keep local state, just mark as seen
@@ -929,7 +955,11 @@ function startRealtimeSync() {
     event: 'UPDATE', schema: 'public', table: 'tasks'
   }, (payload) => {
     const row = payload.new;
-    if (window._isEcho && window._isEcho(row.id)) return;
+    // Kills always win (P0-3b): never treat an incoming delete as our own echo,
+    // otherwise a delete from another device is swallowed for up to 15s whenever
+    // this device recently wrote the same task (the "delete lags then reappears"
+    // symptom). Non-kill updates still respect echo suppression.
+    if (!row.killed && window._isEcho && window._isEcho(row.id)) return;
     // Don't overwrite a task the user is actively editing
     if (typeof currentNotesTaskId !== 'undefined' && row.id === currentNotesTaskId) return;
     if (typeof schedulePopoverTaskId !== 'undefined' && schedulePopoverTaskId !== null && row.id === schedulePopoverTaskId) return;
@@ -967,13 +997,20 @@ function startRealtimeSync() {
         store.killedTasks.splice(kIdx, 1);
       } else if (idx !== -1) {
         // Merge onto existing object (preserves closure references).
+        const localTask = store.tasks[idx];
+        // Optimistic concurrency (P0-3): ignore a row older than our last
+        // confirmed write for this task (stale/out-of-order read).
+        const staleRead = localTask._lastSyncedUpdatedAt && jsTask.updatedAt
+            && Date.parse(jsTask.updatedAt) < Date.parse(localTask._lastSyncedUpdatedAt);
         // Sticky completion guard: don't let a stale realtime row flip a
         // just-completed task back to not-done (the "pop back on fast moves" bug).
-        const localTask = store.tasks[idx];
-        if (window._isStickyComplete && window._isStickyComplete(localTask, jsTask)) {
+        if (staleRead) {
+          console.warn('[Realtime] Ignoring stale update (older than local write) for:', row.title);
+        } else if (window._isStickyComplete && window._isStickyComplete(localTask, jsTask)) {
           console.warn('[Realtime] Ignoring stale un-complete for:', row.title);
         } else {
           Object.keys(jsTask).forEach(k => { localTask[k] = jsTask[k]; });
+          if (jsTask.updatedAt) localTask._lastSyncedUpdatedAt = jsTask.updatedAt;
         }
       } else {
         store.tasks.push(jsTask);

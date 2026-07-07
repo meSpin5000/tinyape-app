@@ -19,6 +19,15 @@
   const MAX_RETRIES = 10;
   let _inFlightSaves = 0;
 
+  // ─── PER-TASK WRITE CHAIN (P0-3) ───
+  // At most one in-flight write per task; rapid mutations to the same task
+  // coalesce into a single trailing write that always sends the LIVE state.
+  // This stops parallel UPDATEs for one row from landing out of order and
+  // leaving the DB (and the next refresh) holding older state — the "revert /
+  // pop-back / delete flip-flop" class of bug.
+  const _writeChains = new Map();   // taskId (string) -> Promise (tail of the chain)
+  const _dirty = new Set();         // taskIds with a queued coalesced write
+
   // ─── SCHEDULED FLUSH (with backoff) ───
   // A queued retry used to wait until the next refresh/visibility change (up to
   // 5 min). This debounced flush drains the queue on its own so a failed save
@@ -96,7 +105,7 @@
   };
 
   window._hasPendingWrites = function() {
-    return pendingWrites.length > 0 || _inFlightSaves > 0;
+    return pendingWrites.length > 0 || _inFlightSaves > 0 || _dirty.size > 0;
   };
 
   // True if a task has an unsent write: a deferred add-task timer OR a queued
@@ -105,6 +114,7 @@
   // old numeric-id keep-branch now that IDs are client-generated UUIDs).
   window._isPendingSave = function(id) {
     const idStr = String(id);
+    if (_dirty.has(idStr)) return true;
     if (pendingWrites.some(e => String(e.id) === idStr)) return true;
     const t = store.tasks.find(x => String(x.id) === idStr);
     return !!(t && t._pendingSaveTimer);
@@ -115,6 +125,7 @@
   window._isSafeToSync = function() {
     if (_inFlightSaves > 0) return false;
     if (pendingWrites.length > 0) return false;
+    if (_dirty.size > 0) return false;
     if (store.tasks.some(t => t._pendingSaveTimer)) return false;
     return true;
   };
@@ -233,7 +244,10 @@
       return;
     }
 
-    // Helper: persist a task to Supabase (with retry on failure)
+    // Helper: persist a task to Supabase via a per-task write chain (P0-3).
+    // Guarantees at most one in-flight write per task, coalesces bursts into a
+    // single trailing write, and always sends the task's LIVE state — so rapid
+    // mutations to one row can't land out of order and revert each other.
     function persistTask(task) {
       if (!task) return;
       // Cancel any pending delayed save from addTask (prevents double INSERT)
@@ -241,28 +255,51 @@
         clearTimeout(task._pendingSaveTimer);
         delete task._pendingSaveTimer;
       }
+      const key = String(task.id);
       // Mark BEFORE save so echo suppression covers the entire round-trip
       _markWritten(task.id);
-      _inFlightSaves++;
-      DB.saveTask(task).then(saved => {
-        _inFlightSaves--;
-        // A null return is a silent failure — queue a retry, don't drop it.
-        if (!saved) {
-          console.error('Sync error (saveTask returned null), queueing retry:', task.title);
-          _queueRetry(task.id);
+      // Coalesce: if a write for this task is already queued, it will pick up
+      // the latest state when it fires — don't stack another.
+      if (_dirty.has(key)) return;
+      _dirty.add(key);
+      const prev = _writeChains.get(key) || Promise.resolve();
+      const next = prev.then(() => {
+        // Clear BEFORE the send so a mutation arriving during this write
+        // re-queues a fresh trailing write.
+        _dirty.delete(key);
+        const inActive = store.tasks.some(t => String(t.id) === key);
+        const inKilled = store.killedTasks.some(t => String(t.id) === key);
+        // Deleted since queued — the deleteTask patch owns its own kill write.
+        // Don't resurrect it with a stale active-state upsert.
+        if (!inActive && inKilled) return;
+        const live = _resolveLiveTask(key) || task;   // always send CURRENT state
+        _markWritten(live.id);
+        _inFlightSaves++;
+        return DB.saveTask(live).then(saved => {
+          _inFlightSaves--;
+          // A null return is a silent failure — queue a retry, don't drop it.
+          if (!saved) {
+            console.error('Sync error (saveTask returned null), queueing retry:', live.title);
+            _queueRetry(live.id);
+            _scheduleFlush();
+            return;
+          }
+          // IDs are client-generated (P0-1) and never change — no swap needed.
+          _markWritten(saved.id);
+          // Optimistic-concurrency watermark (P0-3): remember the server
+          // updated_at we just wrote so a later, OLDER DB read can't revert us.
+          if (saved.updatedAt) live._lastSyncedUpdatedAt = saved.updatedAt;
+        }).catch(err => {
+          _inFlightSaves--;
+          console.error('Sync error (saveTask), queueing retry:', err);
+          // Queue by ID — flush re-resolves the LIVE task so a later state
+          // (e.g. the task getting completed) is what actually gets written.
+          _queueRetry(live.id);
           _scheduleFlush();
-          return;
-        }
-        // IDs are client-generated (P0-1) and never change — no swap needed.
-        _markWritten(saved.id);
-      }).catch(err => {
-        _inFlightSaves--;
-        console.error('Sync error (saveTask), queueing retry:', err);
-        // Queue by ID — flush re-resolves the LIVE task so a later state
-        // (e.g. the task getting completed) is what actually gets written.
-        _queueRetry(task.id);
-        _scheduleFlush();
+        });
       });
+      // Keep the chain alive after errors so subsequent writes still run.
+      _writeChains.set(key, next.catch(() => {}));
     }
 
     // Helper: persist all today tasks (for reorder)
