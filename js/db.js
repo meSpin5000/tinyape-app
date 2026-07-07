@@ -239,43 +239,22 @@ window.TinyApeDB = {
       const dbTask = this._mapJsTaskToDb(task);
       dbTask.user_id = userId;
 
-      let result;
+      // Client-generated UUIDs (P0-1): every task carries its own id, so a
+      // single upsert handles both insert and update. This also makes retries
+      // idempotent — a retried write that actually landed no longer errors or
+      // creates a duplicate row.
+      const { data, error } = await window.supabase
+        .from('tasks')
+        .upsert([dbTask], { onConflict: 'id' })
+        .select();
 
-      // Local-only tasks have integer IDs; DB tasks have UUID strings
-      const isDbTask = task.id && typeof task.id === 'string';
-
-      if (isDbTask) {
-        // Update existing task
-        const { data, error } = await window.supabase
-          .from('tasks')
-          .update(dbTask)
-          .eq('id', task.id)
-          .eq('user_id', userId)
-          .select();
-
-        if (error) {
-          console.error('Error updating task:', error);
-          return null;
-        }
-
-        result = data;
-      } else {
-        // Insert new task
-        const { data, error } = await window.supabase
-          .from('tasks')
-          .insert([dbTask])
-          .select();
-
-        if (error) {
-          console.error('Error inserting task:', error);
-          return null;
-        }
-
-        result = data;
+      if (error) {
+        console.error('Error upserting task:', error);
+        return null;
       }
 
-      if (result && result.length > 0) {
-        return this._mapDbTaskToJs(result[0]);
+      if (data && data.length > 0) {
+        return this._mapDbTaskToJs(data[0]);
       }
 
       return null;

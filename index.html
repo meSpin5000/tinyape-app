@@ -759,8 +759,13 @@ async function refreshFromSupabase(force) {
       const activeIds = new Set();
       store.tasks = store.tasks.filter(local => {
         const sid = String(local.id);
-        // Local-only tasks (numeric IDs not yet in DB) — keep as-is
-        if (typeof local.id === 'number') return true;
+        // Not-yet-persisted task (deferred add-task timer or queued retry) —
+        // keep as-is so a refresh doesn't drop it before its write lands.
+        // (P0-1: replaces the old numeric-id check; IDs are now UUIDs.)
+        if (window._isPendingSave && window._isPendingSave(local.id)) {
+          activeIds.add(sid);
+          return true;
+        }
 
         const dbVersion = dbTaskMap.get(sid);
         const dbKilledVersion = dbKilledMap.get(sid);
@@ -901,21 +906,11 @@ function startRealtimeSync() {
   }, (payload) => {
     const row = payload.new;
     if (window._isEcho && window._isEcho(row.id)) return;
-    // Check if this is our own task awaiting UUID swap (local ID → UUID race)
-    const pendingLocal = store.tasks.find(t => t._pendingSaveTimer || (typeof t.id === 'number' && t._localId === undefined));
-    if (pendingLocal && !store.tasks.some(t => t.id === row.id)) {
-      // Likely our own INSERT — silently swap the ID
-      pendingLocal._localId = pendingLocal.id;
-      pendingLocal.id = row.id;
-      // Merge any DB-side fields (like server-set defaults)
-      const jsTask = TinyApeDB._mapDbTaskToJs(row);
-      Object.keys(jsTask).forEach(k => {
-        if (k !== 'id' && k !== '_localId' && pendingLocal[k] === undefined) {
-          pendingLocal[k] = jsTask[k];
-        }
-      });
-      return; // no render needed
-    }
+    // P0-1: IDs are client-generated, so our own INSERT is caught by echo
+    // suppression above (the UUID was marked before the write). No more
+    // heuristic guessing which local task a new row belongs to — that guess
+    // could misattribute another device's row and destroy a task. The dedup
+    // check below prevents any double-add.
     console.log('[Realtime] Task INSERT:', row.title);
     const jsTask = TinyApeDB._mapDbTaskToJs(row);
     if (row.killed) {

@@ -2,6 +2,21 @@
 // Integer IDs work bare, but UUID strings need quotes to be valid JS.
 function qid(id) { return typeof id === 'string' ? `'${id}'` : id; }
 
+// Client-generated task IDs (race-condition fix P0-1). Every task gets a real
+// UUID at creation time so the DB insert carries an explicit id — no numeric→UUID
+// swap, and no realtime INSERT guessing which local task a new row belongs to.
+// crypto.randomUUID needs a secure context (HTTPS / localhost / file://); the
+// fallback keeps preview.html and older browsers working.
+function _uuid() {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  } catch (e) { /* fall through */ }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
 // ─── DATA STORE ───
 const store = {
   tasks: [],
@@ -77,7 +92,7 @@ const api = {
   },
   addTask(title, category, recurring, recurDays, dueDate, drawer) {
     const task = {
-      id: store.nextId++,
+      id: _uuid(),
       title, category: category || "",
       today: false, todayOrder: null,
       done: false,
@@ -246,7 +261,7 @@ const api = {
 
     // Recurring projects respawn as projects (stay in Projects section)
     const newTask = {
-      id: store.nextId++,
+      id: _uuid(),
       title: original.title,
       category: original.category,
       today: false,
@@ -2828,7 +2843,7 @@ function handleCopyTask(id) {
   const original = store.tasks.find(t => t.id === id);
   if (!original) return;
   const copy = {
-    id: store.nextId++,
+    id: _uuid(),
     title: original.title,
     category: original.category,
     today: original.today,

@@ -99,6 +99,17 @@
     return pendingWrites.length > 0 || _inFlightSaves > 0;
   };
 
+  // True if a task has an unsent write: a deferred add-task timer OR a queued
+  // retry. Used by refreshFromSupabase to keep a not-yet-persisted task from
+  // being removed just because it isn't in the DB response yet (replaces the
+  // old numeric-id keep-branch now that IDs are client-generated UUIDs).
+  window._isPendingSave = function(id) {
+    const idStr = String(id);
+    if (pendingWrites.some(e => String(e.id) === idStr)) return true;
+    const t = store.tasks.find(x => String(x.id) === idStr);
+    return !!(t && t._pendingSaveTimer);
+  };
+
   // Check if it's safe to do a FULL refresh from DB
   // (used by the infrequent fallback poll and tab-focus refresh)
   window._isSafeToSync = function() {
@@ -133,10 +144,7 @@
         // Treat it exactly like a thrown error so the entry keeps retrying
         // instead of being dropped and lost on reload.
         if (!saved) throw new Error('saveTask returned null (soft failure)');
-        if (saved.id !== taskToSave.id) {
-          taskToSave._localId = taskToSave.id;
-          taskToSave.id = saved.id;
-        }
+        // IDs are client-generated (P0-1) and never change, so no swap needed.
         _markWritten(saved.id);
       } catch (err) {
         console.error('Retry failed for task:', taskToSave.title, err);
@@ -245,13 +253,8 @@
           _scheduleFlush();
           return;
         }
-        _markWritten(saved.id);  // also mark the UUID (may differ from local ID)
-        if (saved.id !== task.id) {
-          const oldId = task.id;
-          task._localId = oldId;
-          task.id = saved.id;
-          _markWritten(saved.id);
-        }
+        // IDs are client-generated (P0-1) and never change — no swap needed.
+        _markWritten(saved.id);
       }).catch(err => {
         _inFlightSaves--;
         console.error('Sync error (saveTask), queueing retry:', err);

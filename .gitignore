@@ -10,6 +10,7 @@ package-lock.json
 run-stress-test.js
 run-sync-test.js
 run-phase1-test.js
+run-phase2-test.js
 stress-test.html
 
 # Local env / Netlify cache
