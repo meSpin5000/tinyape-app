@@ -232,7 +232,11 @@
     if (_inFlightSaves > 0) return false;
     if (pendingWrites.length > 0) return false;
     if (_dirty.size > 0) return false;
-    if (_outboxSize() > 0) return false;   // unsynced durable writes — don't overwrite
+    // NOTE: the durable outbox is deliberately NOT checked here. A stuck outbox
+    // entry must never block a REFRESH/READ (that stranded the initial load —
+    // tasks couldn't populate while a write was failing). Unsynced state is
+    // protected instead by re-layering the outbox after each merge + the
+    // in-flight (_inFlightSaves) guard, not by blocking the read.
     if (store.tasks.some(t => t._pendingSaveTimer)) return false;
     return true;
   };
@@ -271,8 +275,9 @@
     if (!DB) return;
 
     if (pendingWrites.length === 0) {
-      // Still drain the durable outbox even when the in-memory queue is empty.
-      await window._flushOutbox();
+      // Drain the durable outbox in the BACKGROUND (not awaited) so a slow or
+      // stuck outbox write never delays a refresh/read.
+      window._flushOutbox();
       return;
     }
 
@@ -309,8 +314,8 @@
 
     stillFailing.forEach(e => pendingWrites.push(e));
     _reportSyncHealth();
-    // Also drain the durable outbox (completions + any task snapshots).
-    await window._flushOutbox();
+    // Drain the durable outbox in the BACKGROUND (not awaited).
+    window._flushOutbox();
     if (pendingWrites.length > 0 || _outboxSize() > 0) _scheduleFlush();
   };
 

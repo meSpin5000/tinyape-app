@@ -688,7 +688,8 @@ async function loadAndShowApp() {
   document.getElementById('loadingPage').style.display = 'flex';
 
   await refreshFromSupabase(true);  // force on initial load
-  _applyOutboxToStore();            // restore unsynced completions after a discard
+  // (refreshFromSupabase now re-layers the outbox itself after the merge; no
+  // separate call needed here.)
 
   document.getElementById('loadingPage').style.display = 'none';
   document.getElementById('appPage').style.display = 'block';
@@ -740,13 +741,21 @@ async function refreshFromSupabase(force) {
       return false;
     }
 
-    // Always flush pending writes before pulling from DB
-    if (window._flushSyncQueue) {
+    // When the store is empty (initial load, or after a tab discard) there is
+    // NO local state to protect, so we must ALWAYS read — a stuck/pending write
+    // can never be allowed to block the initial load (that was the "spinner
+    // forever / only one task shows" bug). The safety gates below apply only
+    // when we already have local data that a stale read could clobber.
+    const storeEmpty = store.tasks.length === 0 && store.killedTasks.length === 0;
+
+    // Flush pending writes before reading (skip on the empty-store initial load
+    // so a stuck write can't delay first paint; the outbox re-layers + re-syncs).
+    if (!storeEmpty && window._flushSyncQueue) {
       await window._flushSyncQueue();
     }
 
-    // If writes are STILL in-flight after flush, don't overwrite local state
-    if (window._isSafeToSync && !window._isSafeToSync()) {
+    // If writes are STILL in-flight after flush, don't overwrite local state.
+    if (!storeEmpty && window._isSafeToSync && !window._isSafeToSync()) {
       console.log('[Sync] Writes still in-flight after flush — skipping refresh');
       return false;
     }
@@ -754,8 +763,8 @@ async function refreshFromSupabase(force) {
     const beforeFP = _storeFingerprint();
     const data = await TinyApeDB.loadAllData();
 
-    // Re-check after network call — a mutation may have happened during fetch
-    if (window._isSafeToSync && !window._isSafeToSync()) {
+    // Re-check after network call — a mutation may have happened during fetch.
+    if (!storeEmpty && window._isSafeToSync && !window._isSafeToSync()) {
       console.log('[Sync] Discarding refresh — local mutation during fetch');
       return false;
     }
@@ -966,6 +975,11 @@ async function refreshFromSupabase(force) {
       if (data.creatureUnlocks && data.creatureUnlocks.length > 0) {
         window._pendingCreatureUnlocks = data.creatureUnlocks;
       }
+
+      // Re-layer any unsynced durable-outbox writes over the just-merged store,
+      // so a refresh that read a DB not yet caught up can't wipe an unsynced
+      // completion / task state. (Replaces the old _isSafeToSync outbox gate.)
+      if (typeof _applyOutboxToStore === 'function') _applyOutboxToStore();
 
       const afterFP = _storeFingerprint();
       if (afterFP === beforeFP) {
