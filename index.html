@@ -1010,9 +1010,11 @@ async function refreshFromSupabase(force) {
 
 let _realtimeChannel = null;
 let _realtimeConnected = false;
+let _lastRealtimeStart = 0;   // cooldown so we don't spam reconnects when realtime is down
 
 function startRealtimeSync() {
   if (!window.supabase || _realtimeChannel) return;
+  _lastRealtimeStart = Date.now();
 
   const channel = window.supabase.channel('tinyape-sync', {
     config: { broadcast: { self: false } }
@@ -1276,8 +1278,12 @@ document.addEventListener('visibilitychange', async () => {
     // Only rebuild the channel if it's actually down, or we were away long
     // enough that a backgrounded socket may be silently dead (mobile). A healthy
     // connection is left alone — no more "disconnect → reconnect" flapping.
+    // Cooldown: if realtime is persistently down (e.g. the Supabase service is
+    // rejecting the WebSocket), don't tear down + rebuild on EVERY focus — that
+    // spams half-open connections. Rebuild at most once per 20s; the fallback
+    // poll keeps data fresh in the meantime.
     const socketMaybeDead = !_realtimeConnected || away > 30000;
-    if (socketMaybeDead) {
+    if (socketMaybeDead && (Date.now() - _lastRealtimeStart > 20000)) {
       stopRealtimeSync();
       startRealtimeSync();
     }
