@@ -1302,26 +1302,36 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
-// ─── FALLBACK POLL (every 5 minutes) ───
-// Safety net: catches anything realtime might have missed.
-// With fingerprint check, this won't cause flicker if nothing changed.
+// ─── FALLBACK POLL ───
+// Realtime pushes changes live, so a full DB reload every minute is pure waste
+// (it was a big share of the Disk-IO drain). The tick runs every 60s for the
+// cheap LOCAL day-rollover check, but only hits the DB when realtime is DOWN,
+// or occasionally (~every 10 min) as a deep safety net for anything realtime
+// silently missed. When realtime is healthy this does ZERO database work.
 let _syncInterval = null;
+let _pollCount = 0;
 function startPeriodicSync() {
   if (_syncInterval) return;
   _syncInterval = setInterval(async () => {
     if (document.visibilityState !== 'visible') return;
     if (document.getElementById('appPage').style.display === 'none') return;
 
-    // Check if midnight rolled over
+    // Cheap, local — always run.
     const dayChanged = checkDayChanged();
 
-    // Flush any failed writes first
-    if (window._flushSyncQueue) {
-      try { await window._flushSyncQueue(); } catch(e) {}
+    _pollCount++;
+    const deepCheck = !_realtimeConnected || (_pollCount % 10 === 0);
+
+    let changed = false;
+    if (deepCheck) {
+      // Flush any failed writes, then pull a full refresh (only when realtime is
+      // down or on the periodic deep-check).
+      if (window._flushSyncQueue) {
+        try { await window._flushSyncQueue(); } catch(e) {}
+      }
+      changed = await refreshFromSupabase();
     }
 
-    // Only do a full refresh if realtime is disconnected or as a safety net
-    const changed = await refreshFromSupabase();
     if (changed || dayChanged) {
       setDate();
       render();
@@ -1335,7 +1345,7 @@ function startPeriodicSync() {
       restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
       delete window._pendingCreatureUnlocks;
     }
-  }, 60000);  // 60 seconds — safety net for when realtime drops
+  }, 60000);  // 60s tick — but DB work only on deepCheck (realtime down / ~10 min)
 }
 
 boot().catch(err => {

@@ -17,6 +17,7 @@ run-phase5-test.js
 run-p21-test.js
 run-delete-order-test.js
 run-outbox-test.js
+run-io-test.js
 stress-test.html
 
 # Local env / Netlify cache

@@ -28,23 +28,32 @@
   const _writeChains = new Map();   // taskId (string) -> Promise (tail of the chain)
   const _dirty = new Set();         // taskIds with a queued coalesced write
 
-  // ─── SCHEDULED FLUSH (with backoff) ───
-  // A queued retry used to wait until the next refresh/visibility change (up to
-  // 5 min). This debounced flush drains the queue on its own so a failed save
-  // self-heals without user action. Delay escalates with the worst retry count.
-  const FLUSH_BACKOFF = [5000, 15000, 60000];  // 5s → 15s → 60s
+  // ─── SCHEDULED FLUSH (with ESCALATING backoff) ───
+  // Drains the queue on its own so a failed save self-heals without user action.
+  // CRITICAL: the delay escalates with a consecutive-failure streak, NOT with
+  // pendingWrites' retry count. The old version read the retry count from
+  // pendingWrites only, so an OUTBOX-only stuck entry reported 0 retries and
+  // retried every 5s forever — hammering a saturated DB and causing statement
+  // timeouts (Supabase Disk-IO depletion). Now a write that keeps failing backs
+  // off to 5 minutes instead of retrying 12x/minute.
+  const FLUSH_BACKOFF = [5000, 15000, 60000, 300000];  // 5s → 15s → 1m → 5m
   const FAIL_THRESHOLD = 3;                     // retries before we warn the user
   let _flushTimer = null;
+  let _flushFailStreak = 0;                     // consecutive flushes that didn't fully drain
 
   function _scheduleFlush() {
     if (_flushTimer) return;
-    const maxRetries = pendingWrites.reduce((m, e) => Math.max(m, e.retries || 0), 0);
-    const delay = FLUSH_BACKOFF[Math.min(maxRetries, FLUSH_BACKOFF.length - 1)];
+    const delay = FLUSH_BACKOFF[Math.min(_flushFailStreak, FLUSH_BACKOFF.length - 1)];
     _flushTimer = setTimeout(() => {
       _flushTimer = null;
       if (!window._flushSyncQueue) return;
       window._flushSyncQueue().then(() => {
-        if (pendingWrites.length > 0 || _outboxSize() > 0) _scheduleFlush();  // keep draining
+        if (pendingWrites.length > 0 || _outboxSize() > 0) {
+          _flushFailStreak++;      // still stuck → back off further next time
+          _scheduleFlush();
+        } else {
+          _flushFailStreak = 0;    // drained → reset the backoff
+        }
       });
     }, delay);
   }
@@ -209,6 +218,7 @@
     _dirty.clear();
     _inFlightSaves = 0;
     if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+    _flushFailStreak = 0;
     _lastCompletionWrite = 0;
     _lastCategoryWrite = 0;
     _outboxClear();   // don't let one account's unsynced writes bleed into the next
@@ -316,7 +326,11 @@
     _reportSyncHealth();
     // Drain the durable outbox in the BACKGROUND (not awaited).
     window._flushOutbox();
-    if (pendingWrites.length > 0 || _outboxSize() > 0) _scheduleFlush();
+    if (pendingWrites.length > 0 || _outboxSize() > 0) {
+      _scheduleFlush();
+    } else {
+      _flushFailStreak = 0;   // fully drained via this path — reset the backoff
+    }
   };
 
   // Track an arbitrary async op through in-flight counter
@@ -452,6 +466,9 @@
           // IDs are client-generated (P0-1) and never change — no swap needed.
           _markWritten(saved.id);
           _outboxRemoveTask(saved.id);   // confirmed in DB — drop from the durable outbox
+          // Remember the order we just persisted so persistTodayOrder can skip
+          // this task next time if its order hasn't changed (write amplification).
+          live._lastPersistedOrder = live.todayOrder;
           // Optimistic-concurrency watermark (P0-3): remember the server
           // updated_at we just wrote so a later, OLDER DB read can't revert us.
           if (saved.updatedAt) live._lastSyncedUpdatedAt = saved.updatedAt;
@@ -470,8 +487,15 @@
 
     // Helper: persist all today tasks (for reorder)
     function persistTodayOrder() {
+      // Only re-save Today tasks whose order ACTUALLY changed since we last
+      // persisted them. The old version wrote EVERY Today task on every
+      // complete/reorder/move — N writes (and N realtime broadcasts) per action,
+      // a big share of the DB write volume. `_lastPersistedOrder` is stamped on
+      // each successful task write (see persistTask).
       const todayTasks = store.tasks.filter(t => t.today && !t.done);
-      todayTasks.forEach(t => persistTask(t));
+      todayTasks.forEach(t => {
+        if (t._lastPersistedOrder !== t.todayOrder) persistTask(t);
+      });
     }
 
     // ─── Patch addTask ───
