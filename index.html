@@ -1248,10 +1248,12 @@ window._setSyncFailure = function(count) {
 };
 
 // ─── CROSS-DEVICE SYNC (visibility change) ───
+let _hiddenAt = Date.now();
 document.addEventListener('visibilitychange', async () => {
   if (document.getElementById('appPage').style.display === 'none') return;
 
   if (document.visibilityState === 'hidden') {
+    _hiddenAt = Date.now();
     // Mobile safety: flush deferred writes (300ms add-task timer + notes
     // debounce) IMMEDIATELY, then drain the retry queue, before tab kill.
     if (window._flushPendingSaves) window._flushPendingSaves();
@@ -1262,18 +1264,31 @@ document.addEventListener('visibilitychange', async () => {
   }
 
   if (document.visibilityState === 'visible') {
-    // Check if the day rolled over while backgrounded
+    const away = Date.now() - (_hiddenAt || 0);
     const dayChanged = checkDayChanged();
 
-    // Resubscribe FIRST, then refresh (P2-5). Mobile browsers kill WebSocket
-    // connections while backgrounded, and _realtimeConnected can be stale.
-    // Recreating the channel before the (awaited) refresh closes the window
-    // where a change lands between the refresh read and the resubscribe and
-    // would otherwise be missed until the next poll.
-    stopRealtimeSync();
-    startRealtimeSync();
+    // Ignore QUICK flips (clicking to DevTools / another window and back). The
+    // old code tore down and rebuilt the realtime channel AND forced a refresh
+    // on every single focus — so alt-tabbing churned realtime in a loop and
+    // fired needless queries. A momentary flip missed nothing.
+    if (away < 3000 && !dayChanged) return;
 
-    const changed = await refreshFromSupabase(true);
+    // Only rebuild the channel if it's actually down, or we were away long
+    // enough that a backgrounded socket may be silently dead (mobile). A healthy
+    // connection is left alone — no more "disconnect → reconnect" flapping.
+    const socketMaybeDead = !_realtimeConnected || away > 30000;
+    if (socketMaybeDead) {
+      stopRealtimeSync();
+      startRealtimeSync();
+    }
+
+    // Only pull a refresh if we might have missed something (realtime was down /
+    // long background) or the day rolled over. If realtime stayed live while we
+    // were briefly away, it already has us current — skip the redundant queries.
+    let changed = false;
+    if (socketMaybeDead || dayChanged) {
+      changed = await refreshFromSupabase(true);
+    }
     setDate();
     if (changed || dayChanged) {
       render(); renderHallOfFame();
