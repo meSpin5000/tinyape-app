@@ -48,11 +48,13 @@
       _flushTimer = null;
       if (!window._flushSyncQueue) return;
       window._flushSyncQueue().then(() => {
-        if (pendingWrites.length > 0 || _outboxSize() > 0) {
+        // Reschedule only while there's something still worth retrying. Once the
+        // queue is drained OR everything left is quarantined, STOP the loop.
+        if (pendingWrites.length > 0 || _outboxHasRetryable()) {
           _flushFailStreak++;      // still stuck → back off further next time
           _scheduleFlush();
         } else {
-          _flushFailStreak = 0;    // drained → reset the backoff
+          _flushFailStreak = 0;    // nothing retryable left — stop and reset
         }
       });
     }, delay);
@@ -182,6 +184,42 @@
   function _outboxClear() {
     try { localStorage.removeItem(OUTBOX_KEY); } catch (e) {}
   }
+
+  // ─── OUTBOX FAILURE CAP (safety valve) ───
+  // A write that keeps getting rejected (bad payload, or a prolonged auth/DB
+  // outage) must NOT retry forever — that's what let one stuck entry burn the
+  // Disk-IO budget. After OUTBOX_MAX_FAILS attempts an entry is QUARANTINED:
+  // kept in localStorage (not lost) but skipped by the flusher, and the retry
+  // loop stops once only-quarantined entries remain. A page reload resets the
+  // counters (fresh chance once you're back online / logged in).
+  const OUTBOX_MAX_FAILS = 8;
+  function _outboxBumpFail(kind, id) {
+    const o = _outboxRead();
+    const e = o[kind] && o[kind][String(id)];
+    if (!e) return;
+    e._fails = (e._fails || 0) + 1;
+    _outboxWrite(o);
+  }
+  function _isQuarantined(entry) {
+    return !!entry && (entry._fails || 0) >= OUTBOX_MAX_FAILS;
+  }
+  // True if the outbox has at least one entry still worth retrying (not quarantined).
+  function _outboxHasRetryable() {
+    const o = _outboxRead();
+    return Object.values(o.tasks).some(e => !_isQuarantined(e))
+        || Object.values(o.completions).some(e => !_isQuarantined(e));
+  }
+  // Reset all failure counters — called on boot so a reload gives everything a
+  // fresh attempt (the outage that jammed them is usually over by then).
+  function _outboxResetFails() {
+    const o = _outboxRead();
+    let changed = false;
+    Object.values(o.tasks).forEach(e => { if (e._fails) { e._fails = 0; changed = true; } });
+    Object.values(o.completions).forEach(e => { if (e._fails) { e._fails = 0; changed = true; } });
+    if (changed) _outboxWrite(o);
+  }
+  window._outboxResetFails = _outboxResetFails;
+
   window._outboxSize = _outboxSize;
   // Snapshot for boot replay. Only returns entries for the current user (or
   // untagged), so a shared browser can't surface another account's writes.
@@ -258,6 +296,7 @@
     if (!DB) return;
     let o = _outboxRead();
     for (const id of Object.keys(o.tasks)) {
+      if (_isQuarantined(o.tasks[id])) continue;   // gave up on this one — stop retrying
       // Prefer the LIVE task (its current state) over the stored snapshot, so a
       // flush never replays a stale snapshot over a newer state (e.g. a task
       // completed after its first write failed). The snapshot is only the
@@ -266,15 +305,18 @@
       try {
         const saved = await DB.saveTask(payload);
         if (saved) _outboxRemoveTask(saved.id != null ? saved.id : id);
-      } catch (e) { /* keep for the next flush */ }
+        else _outboxBumpFail('tasks', id);   // null = soft failure — count it
+      } catch (e) { _outboxBumpFail('tasks', id); }
     }
     o = _outboxRead();
     for (const eid of Object.keys(o.completions)) {
+      if (_isQuarantined(o.completions[eid])) continue;
       const c = o.completions[eid];
       try {
         const saved = await DB.saveCompletionEvent(c.taskId, c.id);
         if (saved) _outboxRemoveCompletion(c.id);
-      } catch (e) { /* keep */ }
+        else _outboxBumpFail('completions', eid);
+      } catch (e) { _outboxBumpFail('completions', eid); }
     }
     _reportSyncHealth();
   };
@@ -326,10 +368,10 @@
     _reportSyncHealth();
     // Drain the durable outbox in the BACKGROUND (not awaited).
     window._flushOutbox();
-    if (pendingWrites.length > 0 || _outboxSize() > 0) {
+    if (pendingWrites.length > 0 || _outboxHasRetryable()) {
       _scheduleFlush();
     } else {
-      _flushFailStreak = 0;   // fully drained via this path — reset the backoff
+      _flushFailStreak = 0;   // nothing retryable left — stop and reset the backoff
     }
   };
 

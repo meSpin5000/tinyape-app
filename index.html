@@ -630,6 +630,9 @@ async function boot() {
   // Tag durable-outbox writes to the current user so a shared browser can't
   // replay one account's unsynced writes into another.
   window._currentUserId = user ? user.id : null;
+  // Fresh page load → give any quarantined outbox writes one more chance (the
+  // outage that jammed them is usually over by now).
+  if (window._outboxResetFails) window._outboxResetFails();
 
   if (user) {
     await loadAndShowApp();
