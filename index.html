@@ -1275,24 +1275,20 @@ document.addEventListener('visibilitychange', async () => {
     // fired needless queries. A momentary flip missed nothing.
     if (away < 3000 && !dayChanged) return;
 
-    // Only rebuild the channel if it's actually down, or we were away long
-    // enough that a backgrounded socket may be silently dead (mobile). A healthy
-    // connection is left alone — no more "disconnect → reconnect" flapping.
-    // Cooldown: if realtime is persistently down (e.g. the Supabase service is
-    // rejecting the WebSocket), don't tear down + rebuild on EVERY focus — that
-    // spams half-open connections. Rebuild at most once per 20s; the fallback
-    // poll keeps data fresh in the meantime.
-    const socketMaybeDead = !_realtimeConnected || away > 30000;
-    if (socketMaybeDead && (Date.now() - _lastRealtimeStart > 20000)) {
-      stopRealtimeSync();
-      startRealtimeSync();
-    }
+    // Do NOT manually tear down / rebuild the realtime channel here. The
+    // Supabase client manages its own reconnection (heartbeats + backoff), and
+    // our manual stop/start on every focus was FIGHTING it — reacting to a
+    // server-side socket drop by churning half-open connections. We leave the
+    // channel alone; if the socket is genuinely dead, the client reconnects it,
+    // and the periodic poll's ~10-minute deep-check (below) catches anything
+    // missed even if `_realtimeConnected` is stale. `_lastRealtimeStart` is kept
+    // for potential future use but no longer gates a resubscribe here.
+    const maybeStale = !_realtimeConnected || away > 30000;
 
-    // Only pull a refresh if we might have missed something (realtime was down /
-    // long background) or the day rolled over. If realtime stayed live while we
-    // were briefly away, it already has us current — skip the redundant queries.
+    // Pull a refresh if we might have missed something (realtime down / long
+    // background) or the day rolled over.
     let changed = false;
-    if (socketMaybeDead || dayChanged) {
+    if (maybeStale || dayChanged) {
       changed = await refreshFromSupabase(true);
     }
     setDate();
@@ -1310,9 +1306,9 @@ document.addEventListener('visibilitychange', async () => {
       restoreCreaturesFromUnlocks(window._pendingCreatureUnlocks);
       delete window._pendingCreatureUnlocks;
     }
-    // NOTE: the channel was already recreated BEFORE the refresh (P2-5).
-    // A second teardown here would discard the fresh subscription and reopen
-    // the missed-event window the pre-refresh resubscribe exists to close.
+    // NOTE (2026-07-07): the realtime channel is intentionally NOT touched on
+    // visibility anymore — the Supabase client owns reconnection. stopRealtimeSync
+    // is now only called on sign-out (_teardownSession).
   }
 });
 
