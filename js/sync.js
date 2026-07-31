@@ -99,6 +99,7 @@
   // We track recent writes so the realtime handler can skip our own changes.
   const _recentWrites = new Map();    // id (string) -> timestamp
   const _recentCompletionEvents = new Map();  // completion event id -> timestamp (P2-1)
+  const _recentTimeSessions = new Map();      // time session id -> timestamp
   let _lastCompletionWrite = 0;       // timestamp of last completion event write/delete (legacy fallback)
   let _lastCategoryWrite = 0;         // timestamp of last category write/delete
 
@@ -252,6 +253,7 @@
     pendingWrites.length = 0;
     _recentWrites.clear();
     _recentCompletionEvents.clear();
+    _recentTimeSessions.clear();
     _writeChains.clear();
     _dirty.clear();
     _inFlightSaves = 0;
@@ -413,6 +415,24 @@
   window._isCompletionEventEcho = function(eventId) {
     if (eventId == null) return false;
     const ts = _recentCompletionEvents.get(String(eventId));
+    return ts != null && (Date.now() - ts < 15000);
+  };
+
+  // Per-session echo suppression for the time_sessions realtime listener.
+  // Keyed on the session id (never a global timestamp) so a genuine remote
+  // session from another device is not swallowed just because THIS device
+  // happened to log a different session in the last 15s.
+  window._markTimeSessionWrite = function(sessionId) {
+    if (sessionId == null) return;
+    const now = Date.now();
+    _recentTimeSessions.set(String(sessionId), now);
+    for (const [k, ts] of _recentTimeSessions) {
+      if (now - ts > 15000) _recentTimeSessions.delete(k);
+    }
+  };
+  window._isTimeSessionEcho = function(sessionId) {
+    if (sessionId == null) return false;
+    const ts = _recentTimeSessions.get(String(sessionId));
     return ts != null && (Date.now() - ts < 15000);
   };
 
@@ -654,22 +674,76 @@
       return task;
     };
 
+    // ─── TIME SESSION WRITES ───
+    // A time_sessions row must NEVER be written standalone. Every session write
+    // is chained onto the parent task's write chain (the same P0-3 ordering the
+    // delete path uses), for two independent reasons:
+    //   1. Foreign key. `time_sessions.task_id` references `tasks.id`, so an
+    //      insert that beats the task's own upsert is rejected outright. That is
+    //      exactly what a session logged from the add-task modal would do.
+    //   2. Refresh safety. `_inFlightSaves` is held for the whole round trip, so
+    //      `_isSafeToSync()` blocks a refresh from reading a DB that does not yet
+    //      contain this session and merging that gap back over local state.
+    //
+    // Failure handling is ONE bounded retry, then give up. This is deliberately
+    // NOT wired into `pendingWrites` or the durable outbox: those have their own
+    // escalating-backoff flusher, and an un-savable entry cycling through it is
+    // precisely what drained the Disk-IO budget on 2026-07-07. A session that
+    // fails both attempts stays visible locally via its `_unsynced` flag and is
+    // re-sent on the next reload, at a cost of at most two requests.
+    const _sessionUuid = () => (typeof _uuid === 'function'
+      ? _uuid()
+      : 'ts-' + Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2));
+
+    function persistSession(taskId, label, send) {
+      const key = String(taskId);
+      const prev = _writeChains.get(key) || Promise.resolve();
+      _inFlightSaves++;
+      let settled = false;
+      const release = (res) => { if (!settled) { settled = true; _inFlightSaves--; } return res; };
+      const failed = (res) => (res === null || res === undefined || res === false);
+      const attempt = () => Promise.resolve().then(send);
+      const next = prev.then(attempt).then(res => {
+        if (!failed(res)) return release(res);
+        console.warn('Sync (' + label + '): write failed, one retry in 3s');
+        return new Promise(r => setTimeout(r, 3000)).then(attempt).then(res2 => {
+          if (failed(res2)) console.error('Sync error (' + label + '): failed twice, giving up');
+          return release(res2);
+        }).catch(err => { console.error('Sync error (' + label + '):', err); return release(null); });
+      }).catch(err => {
+        console.error('Sync error (' + label + '):', err);
+        return release(null);
+      });
+      // Keep the chain alive after errors so later writes for this task still run.
+      _writeChains.set(key, next.then(() => {}, () => {}));
+      return next;
+    }
+
     // ─── Patch addTimeSession ───
     const _origAddTime = api.addTimeSession.bind(api);
     api.addTimeSession = function(id, date, minutes, note) {
       const task = _origAddTime(id, date, minutes, note);
+      if (!task) return task;
+      // Also cancels the 300ms deferred add-task write, so the task row is on
+      // the chain ahead of the session insert that references it.
       persistTask(task);
-      DB.saveTimeSession({ taskId: id, date, minutes, note: note || '' })
-        .then(saved => {
-          // Store the DB id on the local session so we can delete/update it later
-          if (saved && saved.id && task && task.timeSessions) {
-            const last = task.timeSessions[task.timeSessions.length - 1];
-            if (last && last.date === date && last.minutes === minutes) {
-              last.id = saved.id;
+      const sessions = task.timeSessions || [];
+      const sess = sessions[sessions.length - 1];
+      if (!sess) return task;
+      if (!sess.id) sess.id = _sessionUuid();
+      const sid = sess.id;
+      // Mark BEFORE the write so echo suppression covers the whole round trip.
+      if (window._markTimeSessionWrite) window._markTimeSessionWrite(sid);
+      persistSession(id, 'addTimeSession', () =>
+        DB.saveTimeSession({ id: sid, taskId: id, date, minutes, note: note || '' })
+          .then(saved => {
+            if (saved && saved.id) {
+              sess.id = saved.id;
+              delete sess._unsynced;   // confirmed in DB — a refresh may now own it
             }
-          }
-        })
-        .catch(err => console.error('Sync error (addTimeSession):', err));
+            return saved;
+          })
+      );
       return task;
     };
 
@@ -681,15 +755,15 @@
       const sessions = task && task.timeSessions ? task.timeSessions.slice().sort((a, b) => b.date.localeCompare(a.date)) : [];
       const session = sessions[idx];
       const dbSessionId = session && session.id;
+      const wasUnsynced = !!(session && session._unsynced);
 
       _origDelTime(id, idx);
       persistTask(task);
 
-      // Delete from time_sessions table in DB
-      if (dbSessionId) {
-        DB.deleteTimeSession(dbSessionId)
-          .catch(err => console.error('Sync error (deleteTimeSession):', err));
-      }
+      // Nothing to delete in the DB if the insert never landed.
+      if (!dbSessionId || wasUnsynced) return;
+      if (window._markTimeSessionWrite) window._markTimeSessionWrite(dbSessionId);
+      persistSession(id, 'deleteTimeSession', () => DB.deleteTimeSession(dbSessionId));
     };
 
     // ─── Patch updateTimeSession ───
@@ -708,11 +782,18 @@
 
       persistTask(task);
 
-      // Update in DB
-      if (session.id) {
-        DB.updateTimeSession(session.id, updates)
-          .catch(err => console.error('Sync error (updateTimeSession):', err));
+      if (!session.id) return;
+      if (window._markTimeSessionWrite) window._markTimeSessionWrite(session.id);
+      if (session._unsynced) {
+        // The original insert never confirmed — re-send the whole row (upsert)
+        // rather than an UPDATE against a row that may not exist yet.
+        persistSession(taskId, 'updateTimeSession', () =>
+          DB.saveTimeSession({ id: session.id, taskId, date: session.date, minutes: session.minutes, note: session.note || '' })
+            .then(saved => { if (saved) delete session._unsynced; return saved; })
+        );
+        return;
       }
+      persistSession(taskId, 'updateTimeSession', () => DB.updateTimeSession(session.id, updates));
     };
 
     // ─── Patch toggleDone ───

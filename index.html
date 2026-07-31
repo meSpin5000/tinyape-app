@@ -727,8 +727,15 @@ async function loadAndShowApp() {
 // Used for initial load and infrequent fallback sync.
 // Returns true if data changed (callers should re-render).
 function _storeFingerprint() {
+  const _sessFp = (t) => {
+    const s = t.timeSessions || [];
+    // Count AND total minutes: a session edited on another device leaves the
+    // count identical, so counting alone would report "data unchanged" and skip
+    // the re-render even though the value on screen is now wrong.
+    return s.length + ':' + s.reduce((sum, x) => sum + (x.minutes || 0), 0);
+  };
   const taskPart = store.tasks.map(t =>
-    `${t.id}|${t.title}|${t.today}|${t.todayOrder}|${t.done}|${t.dueDate}|${t.drawer}|${t.notes}|${t.isProject}|${t.trackTime}|${t.killed}|${t.completedAt}|${t.recurring}|${t.recurDays}|${t.drawerCategory}|${(t.timeSessions||[]).length}`
+    `${t.id}|${t.title}|${t.today}|${t.todayOrder}|${t.done}|${t.dueDate}|${t.drawer}|${t.notes}|${t.isProject}|${t.trackTime}|${t.killed}|${t.completedAt}|${t.recurring}|${t.recurDays}|${t.drawerCategory}|${_sessFp(t)}`
   ).join(';');
   const killedPart = store.killedTasks.map(t => `${t.id}|${t.killedAt}`).join(';');
   const logPart = completionLog.length;
@@ -814,7 +821,13 @@ async function refreshFromSupabase(force) {
             && Date.parse(db.updatedAt) < Date.parse(local._lastSyncedUpdatedAt)) {
           return;
         }
-        // Preserve timeSessions — they're in a separate table and won't be in DB task payload
+        // Session list handling. `db.timeSessions` is UNDEFINED when the payload
+        // is a raw tasks row (it has no session column) and an ARRAY when it came
+        // from loadAllData, which joins the time_sessions table. That distinction
+        // is the whole point: the old code could not tell "the DB genuinely has
+        // zero sessions" from "this payload has no session data", so it restored
+        // the local list whenever the DB list was empty — which meant a session
+        // deleted on another device resurrected here on the next refresh.
         const localSessions = local.timeSessions;
         // Sticky completion: if this is a recent local completion and the DB row
         // would un-complete it (stale read), keep the completed state.
@@ -829,9 +842,17 @@ async function refreshFromSupabase(force) {
           local.today = keepToday; local.todayOrder = keepOrder;
           local._completedLocallyAt = keepStamp;
         }
-        // Restore timeSessions if DB didn't have them
-        if (localSessions && localSessions.length && (!local.timeSessions || !local.timeSessions.length)) {
+        if (local.timeSessions === undefined) {
+          // Payload carried no session data — keep whatever we already had.
           local.timeSessions = localSessions;
+        } else if (localSessions && localSessions.length) {
+          // The DB list is authoritative (so remote deletes finally stick), but
+          // re-append any local session whose insert has not confirmed yet.
+          // Without this, logging time and refreshing before the write lands
+          // would silently drop the entry from view.
+          const dbIds = new Set(local.timeSessions.map(s => String(s.id)));
+          const unsynced = localSessions.filter(s => s._unsynced && !dbIds.has(String(s.id)));
+          if (unsynced.length) local.timeSessions = local.timeSessions.concat(unsynced);
         }
         // Advance the optimistic-concurrency watermark to the applied row.
         if (db.updatedAt) local._lastSyncedUpdatedAt = db.updatedAt;
@@ -1033,6 +1054,10 @@ function startRealtimeSync() {
     // check below prevents any double-add.
     console.log('[Realtime] Task INSERT:', row.title);
     const jsTask = TinyApeDB._mapDbTaskToJs(row);
+    // A tasks row carries no session data, so the mapper leaves this undefined.
+    // A brand new task has none anyway — give it a real array so downstream
+    // code never sees a task without a session list.
+    if (!jsTask.timeSessions) jsTask.timeSessions = [];
     if (row.killed) {
       if (!store.killedTasks.some(t => t.id === row.id)) {
         store.killedTasks.push(jsTask);
@@ -1063,10 +1088,14 @@ function startRealtimeSync() {
     const kIdx = store.killedTasks.findIndex(t => t.id === row.id);
     const existing = idx !== -1 ? store.tasks[idx] : (kIdx !== -1 ? store.killedTasks[kIdx] : null);
 
-    // Preserve local timeSessions — they live in a separate table
-    if (existing && existing.timeSessions && existing.timeSessions.length && (!jsTask.timeSessions || !jsTask.timeSessions.length)) {
-      jsTask.timeSessions = existing.timeSessions;
-    }
+    // Local timeSessions are preserved structurally now: _mapDbTaskToJs does not
+    // set the key at all for a raw tasks row, so the Object.keys() copies below
+    // never touch the local list. Session changes arrive on their own
+    // time_sessions listener (further down) with the actual session data. The
+    // old guard here copied `existing.timeSessions` across whenever the mapped
+    // value was empty, which PINNED a stale list: a session added on another
+    // device stayed invisible because this device kept overwriting the payload
+    // with its own older array.
 
     if (row.killed) {
       // Task was killed — merge onto existing or add to killed list
@@ -1194,6 +1223,90 @@ function startRealtimeSync() {
       delete store.drawerCategories[id];
     }
     renderDrawer();
+  });
+
+  // ─── TIME SESSIONS ───
+  // Sessions live in their own table, so a session logged on one device used to
+  // reach the others only when a full refresh happened to run (boot, tab focus
+  // after 30s+, or the ~10-minute deep-check poll) — hence "project times don't
+  // always show up on mobile". Requires supabase-add-time-sessions-realtime.sql.
+  //
+  // Cost discipline, deliberately: these handlers do ZERO database work. They
+  // apply the row that is already in the payload and re-render. No re-fetch on
+  // receipt (the fragile pattern the creature piggyback used), no writes, no new
+  // timers or channels — this hangs off the existing 'tinyape-sync' channel. A
+  // handler that never writes cannot feed itself, so no echo loop is possible.
+  function _findTaskForSession(taskId) {
+    const sid = String(taskId);
+    return store.tasks.find(t => String(t.id) === sid)
+        || store.killedTasks.find(t => String(t.id) === sid)
+        || null;
+  }
+
+  // Repaint after a remote session change. Skipped while the user has that
+  // task's notes card open, so a background sync can't yank the DOM out from
+  // under an in-progress edit.
+  function _afterSessionChange(task) {
+    if (typeof currentNotesTaskId !== 'undefined' && currentNotesTaskId !== null
+        && String(currentNotesTaskId) === String(task.id)) return;
+    render();
+  }
+
+  channel.on('postgres_changes', {
+    event: 'INSERT', schema: 'public', table: 'time_sessions'
+  }, (payload) => {
+    const row = payload.new;
+    if (!row) return;
+    if (window._isTimeSessionEcho && window._isTimeSessionEcho(row.id)) return;
+    const task = _findTaskForSession(row.task_id);
+    if (!task) return;   // task not loaded here yet; the next refresh brings both
+    if (!task.timeSessions) task.timeSessions = [];
+    // Dedup by id: even if echo suppression missed (slow round trip), our own
+    // row can only ever match an existing entry, never duplicate it.
+    if (task.timeSessions.some(s => String(s.id) === String(row.id))) return;
+    console.log('[Realtime] Time session INSERT:', row.minutes + 'm on', task.title);
+    task.timeSessions.push({ id: row.id, date: row.date, minutes: row.minutes, note: row.note || '' });
+    _afterSessionChange(task);
+  });
+
+  channel.on('postgres_changes', {
+    event: 'UPDATE', schema: 'public', table: 'time_sessions'
+  }, (payload) => {
+    const row = payload.new;
+    if (!row) return;
+    if (window._isTimeSessionEcho && window._isTimeSessionEcho(row.id)) return;
+    const task = _findTaskForSession(row.task_id);
+    if (!task || !task.timeSessions) return;
+    const sess = task.timeSessions.find(s => String(s.id) === String(row.id));
+    if (!sess) return;
+    console.log('[Realtime] Time session UPDATE:', row.id);
+    sess.date = row.date;
+    sess.minutes = row.minutes;
+    sess.note = row.note || '';
+    delete sess._unsynced;
+    _afterSessionChange(task);
+  });
+
+  channel.on('postgres_changes', {
+    event: 'DELETE', schema: 'public', table: 'time_sessions'
+  }, (payload) => {
+    const old = payload.old;
+    if (!old || old.id == null) return;
+    if (window._isTimeSessionEcho && window._isTimeSessionEcho(old.id)) return;
+    // Scan locally rather than trusting old.task_id: without REPLICA IDENTITY
+    // FULL a delete payload carries only the primary key. The migration sets
+    // FULL, but scanning costs nothing and keeps this correct either way.
+    const sid = String(old.id);
+    let hit = null;
+    const all = store.tasks.concat(store.killedTasks);
+    for (const t of all) {
+      if (!t.timeSessions) continue;
+      const i = t.timeSessions.findIndex(s => String(s.id) === sid);
+      if (i !== -1) { t.timeSessions.splice(i, 1); hit = t; break; }
+    }
+    if (!hit) return;
+    console.log('[Realtime] Time session DELETE:', sid, 'from', hit.title);
+    _afterSessionChange(hit);
   });
 
   // ─── SUBSCRIBE ───

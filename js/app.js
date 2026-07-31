@@ -193,7 +193,14 @@ const api = {
     const task = store.tasks.find(t => t.id === id);
     if (!task) return;
     if (!task.timeSessions) task.timeSessions = [];
-    task.timeSessions.push({ date, minutes, note: note || '' });
+    // Client-generated id (like tasks and completion events) so the session has
+    // a stable identity BEFORE the DB write returns. That lets sync.js mark the
+    // realtime echo up front and lets the realtime handler dedup by id, so our
+    // own INSERT echoing back can never create a duplicate row in the UI.
+    // `_unsynced` is cleared by sync.js once the DB confirms the write; while
+    // it is set, a refresh will not drop this session even though the DB has
+    // no row for it yet.
+    task.timeSessions.push({ id: _uuid(), date, minutes, note: note || '', _unsynced: true });
     return task;
   },
   deleteTimeSession(id, idx) {
@@ -1727,7 +1734,13 @@ function addModalSubmit(destination) {
       const minutes = parseInt(slider.value);
       const noteText = note ? note.value.trim() : '';
       const todayStr2 = _localDateStr();
-      task.timeSessions.push({ date: todayStr2, minutes, note: noteText });
+      // Go through api.addTimeSession, NOT a raw push. The raw push only ever
+      // touched the in-memory store, so a session logged while creating the
+      // task was never written to the time_sessions table — invisible on every
+      // other device and gone on the next reload. The sync layer chains this
+      // write onto the task's own write chain, so the session insert can never
+      // beat the task row it references (foreign key).
+      api.addTimeSession(task.id, todayStr2, minutes, noteText);
     }
   }
 

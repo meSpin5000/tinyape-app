@@ -51,7 +51,14 @@ window.TinyApeDB = {
       isProject: dbTask.is_project,
       trackTime: dbTask.track_time || false,
       projectOrder: dbTask.project_order,
-      timeSessions: dbTask.time_sessions || [],
+      // `timeSessions` is deliberately NOT set here. Sessions live in the
+      // separate `time_sessions` table and are never a column on a tasks row,
+      // so anything mapping a RAW tasks row (i.e. a realtime payload) has no
+      // session data to give and must leave the local list alone. loadAllData
+      // assigns the real array itself after joining the table — that explicit
+      // assignment is the only authoritative session list. Leaving this
+      // undefined is what lets the merge paths tell "the DB genuinely has zero
+      // sessions" apart from "this payload doesn't include sessions at all".
       killed: dbTask.killed || false,
       killedAt: dbTask.killed_at,
       createdAt: dbTask.created_at,
@@ -725,9 +732,15 @@ window.TinyApeDB = {
         note: session.note || ''
       };
 
+      // Client-generated id (same approach as tasks and completion events)
+      // makes this write IDEMPOTENT: a retry of a write that already landed
+      // updates the same row instead of creating a duplicate, and the realtime
+      // echo can be matched by id on the writing device.
+      if (session.id) sessionData.id = session.id;
+
       const { data, error } = await window.supabase
         .from('time_sessions')
-        .insert([sessionData])
+        .upsert([sessionData], { onConflict: 'id' })
         .select();
 
       if (error) {

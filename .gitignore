@@ -19,6 +19,7 @@ run-delete-order-test.js
 run-outbox-test.js
 run-io-test.js
 run-quarantine-test.js
+run-timesession-test.js
 stress-test.html
 
 # Local env / Netlify cache
