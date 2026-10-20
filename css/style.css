@@ -333,7 +333,7 @@
   }
   .add-modal-notes .notes-line {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 6px;
     min-height: 22px;
     line-height: 1.5;
@@ -347,6 +347,8 @@
   }
   .add-modal-notes .notes-line .cb-visual {
     display: inline-block;
+    /* Pin to first line of wrapped text: center box within one line-height */
+    margin-top: calc((1.5em - 14px) / 2);
     width: 14px;
     height: 14px;
     border: 1.5px solid var(--text-muted);
@@ -3106,7 +3108,7 @@
   /* ─── INLINE CHECKLIST (inside contenteditable notes) ─── */
   .notes-line {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 6px;
     min-height: 20px;
     line-height: 1.5;
@@ -3121,6 +3123,8 @@
   /* Span-based visual checkbox — replaces <input> to fix Tab cursor bug */
   .notes-line .cb-visual {
     display: inline-block;
+    /* Pin to first line of wrapped text: center box within one line-height */
+    margin-top: calc((1.5em - 14px) / 2);
     width: 14px;
     height: 14px;
     border: 1.5px solid var(--text-muted);
