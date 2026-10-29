@@ -682,6 +682,18 @@ function _applyOutboxToStore() {
       completionLog.push({ ts: c.ts, id: c.id, taskId: c.taskId || null });
     }
   });
+  // Pending time-session edits/adds/deletes win over the DB copy until they
+  // land, so a refresh can't revert an edit that hasn't saved yet (2026-10-29).
+  Object.values(ob.sessions || {}).forEach(e => {
+    const sid = String(e.taskId);
+    const t = store.tasks.find(x => String(x.id) === sid) || store.killedTasks.find(x => String(x.id) === sid);
+    if (!t) return;
+    if (!t.timeSessions) t.timeSessions = [];
+    const i = t.timeSessions.findIndex(x => String(x.id) === String(e.id));
+    if (e.op === 'delete') { if (i !== -1) t.timeSessions.splice(i, 1); return; }
+    const row = { id: e.id, date: e.date, minutes: e.minutes, note: e.note || '', _unsynced: true };
+    if (i !== -1) Object.assign(t.timeSessions[i], row); else t.timeSessions.push(row);
+  });
   // Re-send anything still unsynced (best-effort; no-op if already drained).
   if (window._flushOutbox) window._flushOutbox();
 }

@@ -38,14 +38,18 @@ window.TinyApeDB = {
         return null;
       }
 
-      const { data: { user }, error } = await window.supabase.auth.getUser();
+      // getSession() reads the signed-in session the client already holds
+      // (refreshing the token itself when needed). getUser() made a network
+      // round trip to the auth server on EVERY write, so any auth blip failed
+      // the write outright. RLS still enforces user_id server-side.
+      const { data: { session }, error } = await window.supabase.auth.getSession();
 
-      if (error || !user) {
+      if (error || !session || !session.user) {
         console.error('Error getting user:', error);
         return null;
       }
 
-      return user.id;
+      return session.user.id;
     } catch (err) {
       console.error('Unexpected error getting user ID:', err);
       return null;

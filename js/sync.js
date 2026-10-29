@@ -70,7 +70,7 @@
     const now = Date.now();
     let failing = pendingWrites.filter(e => (e.retries || 0) >= FAIL_THRESHOLD).length;
     const o = _outboxRead();
-    failing += Object.values(o.tasks).concat(Object.values(o.completions))
+    failing += Object.values(o.tasks).concat(Object.values(o.completions), Object.values(o.sessions))
       .filter(e => e._addedAt && (now - e._addedAt > OUTBOX_STUCK_MS)).length;
     if (window._setSyncFailure) window._setSyncFailure(failing);
   }
@@ -125,11 +125,11 @@
   function _outboxRead() {
     try {
       const raw = localStorage.getItem(OUTBOX_KEY);
-      if (!raw) return { userId: null, tasks: {}, completions: {} };
+      if (!raw) return { userId: null, tasks: {}, completions: {}, sessions: {} };
       const o = JSON.parse(raw);
-      return { userId: o.userId || null, tasks: o.tasks || {}, completions: o.completions || {} };
+      return { userId: o.userId || null, tasks: o.tasks || {}, completions: o.completions || {}, sessions: o.sessions || {} };
     } catch (e) {
-      return { userId: null, tasks: {}, completions: {} };
+      return { userId: null, tasks: {}, completions: {}, sessions: {} };
     }
   }
   function _outboxWrite(o) {
@@ -178,9 +178,32 @@
     const o = _outboxRead();
     if (o.completions[String(eventId)]) { delete o.completions[String(eventId)]; _outboxWrite(o); }
   }
+  // Time-session writes (2026-10-29). One entry per session id, latest op wins:
+  // { op: 'upsert'|'delete', id, taskId, date, minutes, note }. Before this a
+  // session write that failed twice was simply dropped, so an edit showed on
+  // screen and then silently reverted on the next refresh.
+  function _outboxAddSession(entry) {
+    if (!entry || entry.id == null) return;
+    const o = _outboxRead();
+    o.userId = window._currentUserId || o.userId || null;
+    const prev = o.sessions[String(entry.id)];
+    o.sessions[String(entry.id)] = Object.assign({}, entry, {
+      _addedAt: (prev && prev._addedAt) ? prev._addedAt : Date.now()
+    });
+    _outboxWrite(o);
+  }
+  function _outboxRemoveSession(id, onlyIf) {
+    const o = _outboxRead();
+    const e = o.sessions[String(id)];
+    if (!e) return;
+    // Don't clear a NEWER op for the same session that was queued while this
+    // one was in flight (e.g. edit landed, then a delete was queued).
+    if (onlyIf && (e.op !== onlyIf.op || e.minutes !== onlyIf.minutes || e.date !== onlyIf.date || e.note !== onlyIf.note)) return;
+    delete o.sessions[String(id)]; _outboxWrite(o);
+  }
   function _outboxSize() {
     const o = _outboxRead();
-    return Object.keys(o.tasks).length + Object.keys(o.completions).length;
+    return Object.keys(o.tasks).length + Object.keys(o.completions).length + Object.keys(o.sessions).length;
   }
   function _outboxClear() {
     try { localStorage.removeItem(OUTBOX_KEY); } catch (e) {}
@@ -208,7 +231,8 @@
   function _outboxHasRetryable() {
     const o = _outboxRead();
     return Object.values(o.tasks).some(e => !_isQuarantined(e))
-        || Object.values(o.completions).some(e => !_isQuarantined(e));
+        || Object.values(o.completions).some(e => !_isQuarantined(e))
+        || Object.values(o.sessions).some(e => !_isQuarantined(e));
   }
   // Reset all failure counters — called on boot so a reload gives everything a
   // fresh attempt (the outage that jammed them is usually over by then).
@@ -217,6 +241,7 @@
     let changed = false;
     Object.values(o.tasks).forEach(e => { if (e._fails) { e._fails = 0; changed = true; } });
     Object.values(o.completions).forEach(e => { if (e._fails) { e._fails = 0; changed = true; } });
+    Object.values(o.sessions).forEach(e => { if (e._fails) { e._fails = 0; changed = true; } });
     if (changed) _outboxWrite(o);
   }
   window._outboxResetFails = _outboxResetFails;
@@ -227,8 +252,8 @@
   window._outboxSnapshot = function() {
     const o = _outboxRead();
     const uid = window._currentUserId || null;
-    if (o.userId && uid && o.userId !== uid) return { tasks: {}, completions: {} };
-    return { tasks: o.tasks, completions: o.completions };
+    if (o.userId && uid && o.userId !== uid) return { tasks: {}, completions: {}, sessions: {} };
+    return { tasks: o.tasks, completions: o.completions, sessions: o.sessions };
   };
 
   // ─── EXPOSED HELPERS ───
@@ -319,6 +344,26 @@
         if (saved) _outboxRemoveCompletion(c.id);
         else _outboxBumpFail('completions', eid);
       } catch (e) { _outboxBumpFail('completions', eid); }
+    }
+    // Sessions AFTER tasks: time_sessions.task_id is a foreign key, so the
+    // parent task row must land first. Same quarantine cap as everything else,
+    // so a permanently-failing session costs a bounded number of requests.
+    o = _outboxRead();
+    for (const sid of Object.keys(o.sessions)) {
+      const e = o.sessions[sid];
+      if (_isQuarantined(e)) continue;
+      try {
+        if (window._markTimeSessionWrite) window._markTimeSessionWrite(e.id);
+        const ok = e.op === 'delete'
+          ? await DB.deleteTimeSession(e.id)
+          : await DB.saveTimeSession({ id: e.id, taskId: e.taskId, date: e.date, minutes: e.minutes, note: e.note || '' });
+        if (ok) {
+          _outboxRemoveSession(e.id, e);
+          const t = _resolveLiveTask(e.taskId);
+          const live = t && t.timeSessions && t.timeSessions.find(x => String(x.id) === String(e.id));
+          if (live && e.op !== 'delete') delete live._unsynced;
+        } else _outboxBumpFail('sessions', sid);
+      } catch (err) { _outboxBumpFail('sessions', sid); }
     }
     _reportSyncHealth();
   };
@@ -695,12 +740,26 @@
       ? _uuid()
       : 'ts-' + Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2));
 
-    function persistSession(taskId, label, send) {
+    function persistSession(taskId, label, send, entry) {
+      // Durable FIRST: if the tab dies, the network drops, or both attempts
+      // fail, the op survives in localStorage and the outbox flusher (bounded
+      // backoff + quarantine cap) retries it. A refresh re-layers it on top of
+      // the DB copy (index.html _applyOutboxToStore) so it can't be reverted.
+      if (entry) _outboxAddSession(entry);
       const key = String(taskId);
       const prev = _writeChains.get(key) || Promise.resolve();
       _inFlightSaves++;
       let settled = false;
-      const release = (res) => { if (!settled) { settled = true; _inFlightSaves--; } return res; };
+      const release = (res) => {
+        if (!settled) {
+          settled = true; _inFlightSaves--;
+          if (entry) {
+            if (!failed(res)) _outboxRemoveSession(entry.id, entry);
+            else { _reportSyncHealth(); _scheduleFlush(); }
+          }
+        }
+        return res;
+      };
       const failed = (res) => (res === null || res === undefined || res === false);
       const attempt = () => Promise.resolve().then(send);
       const next = prev.then(attempt).then(res => {
@@ -734,15 +793,16 @@
       const sid = sess.id;
       // Mark BEFORE the write so echo suppression covers the whole round trip.
       if (window._markTimeSessionWrite) window._markTimeSessionWrite(sid);
+      const row = { op: 'upsert', id: sid, taskId: id, date, minutes, note: note || '' };
       persistSession(id, 'addTimeSession', () =>
-        DB.saveTimeSession({ id: sid, taskId: id, date, minutes, note: note || '' })
+        DB.saveTimeSession(row)
           .then(saved => {
             if (saved && saved.id) {
               sess.id = saved.id;
               delete sess._unsynced;   // confirmed in DB — a refresh may now own it
             }
             return saved;
-          })
+          }), row
       );
       return task;
     };
@@ -760,10 +820,14 @@
       _origDelTime(id, idx);
       persistTask(task);
 
-      // Nothing to delete in the DB if the insert never landed.
-      if (!dbSessionId || wasUnsynced) return;
+      if (!dbSessionId) return;
       if (window._markTimeSessionWrite) window._markTimeSessionWrite(dbSessionId);
-      persistSession(id, 'deleteTimeSession', () => DB.deleteTimeSession(dbSessionId));
+      // Delete even if the insert never confirmed: it may have landed without
+      // us hearing back, and a delete of a missing row is a harmless no-op.
+      // Queuing it also supersedes any pending upsert for the same session.
+      const del = { op: 'delete', id: dbSessionId, taskId: id };
+      persistSession(id, 'deleteTimeSession', () => DB.deleteTimeSession(dbSessionId), del);
+      void wasUnsynced;
     };
 
     // ─── Patch updateTimeSession ───
@@ -784,16 +848,14 @@
 
       if (!session.id) return;
       if (window._markTimeSessionWrite) window._markTimeSessionWrite(session.id);
-      if (session._unsynced) {
-        // The original insert never confirmed — re-send the whole row (upsert)
-        // rather than an UPDATE against a row that may not exist yet.
-        persistSession(taskId, 'updateTimeSession', () =>
-          DB.saveTimeSession({ id: session.id, taskId, date: session.date, minutes: session.minutes, note: session.note || '' })
-            .then(saved => { if (saved) delete session._unsynced; return saved; })
-        );
-        return;
-      }
-      persistSession(taskId, 'updateTimeSession', () => DB.updateTimeSession(session.id, updates));
+      // Always send the whole row as an idempotent upsert. Works whether or not
+      // the original insert confirmed, and the queued entry carries everything
+      // needed to replay it after a reload.
+      const row = { op: 'upsert', id: session.id, taskId, date: session.date, minutes: session.minutes, note: session.note || '' };
+      persistSession(taskId, 'updateTimeSession', () =>
+        DB.saveTimeSession(row)
+          .then(saved => { if (saved) delete session._unsynced; return saved; }), row
+      );
     };
 
     // ─── Patch toggleDone ───
