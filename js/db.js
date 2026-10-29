@@ -7,6 +7,30 @@ window.TinyApeDB = {
    * @private
    * @returns {Promise<string|null>} User ID or null
    */
+  /**
+   * Read EVERY row a query matches, paging past Supabase's per-request cap.
+   * PostgREST returns at most 1000 rows per request by default and does it
+   * silently (no error, no warning). Once an account crossed 1000 time
+   * sessions, the oldest-first read stopped at 1000 and every newer session
+   * vanished on the next refresh even though it was saved. All loadAllData
+   * reads go through here so tasks, completions and creature unlocks can never
+   * hit the same wall. `build` must return a fresh query with a stable order
+   * (we add `id` as a tiebreaker so pages never overlap or skip rows).
+   * @returns {Promise<{data: Array|null, error: Object|null}>}
+   */
+  async _fetchAll(build) {
+    const PAGE = 1000;
+    const all = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await build()
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) return { data: null, error };
+      if (data && data.length) all.push(...data);
+      if (!data || data.length < PAGE) return { data: all, error: null };
+    }
+  },
+
   async _getUserId() {
     try {
       if (!window.supabase) {
@@ -119,11 +143,11 @@ window.TinyApeDB = {
       }
 
       // Load tasks
-      const { data: tasksData, error: tasksError } = await window.supabase
+      const { data: tasksData, error: tasksError } = await this._fetchAll(() => window.supabase
         .from('tasks')
         .select('*')
         .eq('user_id', userId)
-        .order('today_order', { ascending: true, nullsFirst: true });
+        .order('today_order', { ascending: true, nullsFirst: true }));
 
       if (tasksError) {
         console.error('Error loading tasks:', tasksError);
@@ -134,11 +158,11 @@ window.TinyApeDB = {
       const killedTasks = [];
 
       // Load time sessions and build a lookup by task_id
-      const { data: timeData, error: timeError } = await window.supabase
+      const { data: timeData, error: timeError } = await this._fetchAll(() => window.supabase
         .from('time_sessions')
         .select('*')
         .eq('user_id', userId)
-        .order('date', { ascending: true });
+        .order('date', { ascending: true }));
 
       if (timeError) {
         console.error('Error loading time sessions:', timeError);
@@ -152,8 +176,11 @@ window.TinyApeDB = {
 
       (tasksData || []).forEach(dbTask => {
         const jsTask = this._mapDbTaskToJs(dbTask);
-        // Merge time sessions from the separate table
-        jsTask.timeSessions = timeByTask[dbTask.id] || [];
+        // Merge time sessions from the separate table. If that read FAILED,
+        // leave the list undefined ("no session data in this payload") so the
+        // refresh merge keeps what is already on screen, instead of treating a
+        // network blip as "this project has zero sessions" and wiping the view.
+        jsTask.timeSessions = timeError ? undefined : (timeByTask[dbTask.id] || []);
         if (dbTask.killed) {
           killedTasks.push(jsTask);
         } else {
@@ -181,11 +208,11 @@ window.TinyApeDB = {
       });
 
       // Load completion events
-      const { data: completionData, error: completionError } = await window.supabase
+      const { data: completionData, error: completionError } = await this._fetchAll(() => window.supabase
         .from('completion_events')
         .select('*')
         .eq('user_id', userId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true }));
 
       if (completionError) {
         console.error('Error loading completion events:', completionError);
@@ -198,11 +225,11 @@ window.TinyApeDB = {
       }));
 
       // Load creature unlocks
-      const { data: creatureData, error: creatureError } = await window.supabase
+      const { data: creatureData, error: creatureError } = await this._fetchAll(() => window.supabase
         .from('creature_unlocks')
         .select('*')
         .eq('user_id', userId)
-        .order('unlocked_at', { ascending: true });
+        .order('unlocked_at', { ascending: true }));
 
       if (creatureError) {
         console.error('Error loading creature unlocks:', creatureError);
