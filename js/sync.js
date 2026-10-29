@@ -71,7 +71,7 @@
     let failing = pendingWrites.filter(e => (e.retries || 0) >= FAIL_THRESHOLD).length;
     const o = _outboxRead();
     failing += Object.values(o.tasks).concat(Object.values(o.completions), Object.values(o.sessions))
-      .filter(e => e._addedAt && (now - e._addedAt > OUTBOX_STUCK_MS)).length;
+      .filter(e => e._alert || (e._addedAt && (now - e._addedAt > OUTBOX_STUCK_MS))).length;
     if (window._setSyncFailure) window._setSyncFailure(failing);
   }
 
@@ -755,7 +755,19 @@
           settled = true; _inFlightSaves--;
           if (entry) {
             if (!failed(res)) _outboxRemoveSession(entry.id, entry);
-            else { _reportSyncHealth(); _scheduleFlush(); }
+            else {
+              // Both attempts failed. Say so NOW: the "Logged" / "Session
+              // updated" toast already fired optimistically, so without this the
+              // last thing the user saw was a success message. `_alert` puts
+              // the entry on the banner immediately instead of after 60s.
+              const o = _outboxRead();
+              const e = o.sessions[String(entry.id)];
+              if (e) { e._alert = true; _outboxWrite(o); }
+              if (typeof showToast === 'function') {
+                showToast("Couldn't save that time session. TinyApe will keep retrying.", 5000);
+              }
+              _reportSyncHealth(); _scheduleFlush();
+            }
           }
         }
         return res;

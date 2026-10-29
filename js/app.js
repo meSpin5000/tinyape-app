@@ -3007,11 +3007,13 @@ function setDate() {
 }
 
 // Toast
-function showToast(msg) {
+function showToast(msg, ms) {
   const toast = document.getElementById('toast');
   toast.textContent = msg;
   toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 1800);
+  // A newer toast must not be hidden early by an older toast's timer.
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => toast.classList.remove('show'), ms || 1800);
 }
 
 // ─── NOTES SIDEBAR ───
