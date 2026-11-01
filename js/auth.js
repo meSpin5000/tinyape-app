@@ -12,7 +12,7 @@ window.TinyApeAuth = {
   async initAuth() {
     try {
       // Import Supabase from CDN
-      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+      const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm');
 
       // Create and attach client to window
       window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);

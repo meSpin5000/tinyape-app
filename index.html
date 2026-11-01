@@ -1352,17 +1352,39 @@ let _lastKnownDay = typeof _localDateStr === 'function' ? _localDateStr() : new 
 function checkDayChanged() {
   const today = typeof _localDateStr === 'function' ? _localDateStr() : new Date().toLocaleDateString('en-CA');
   if (today !== _lastKnownDay) {
+    console.log('[Day] rolled over', _lastKnownDay, '->', today);
     _lastKnownDay = today;
-    // New day! Clear creatures + reshuffle pool
-    if (typeof clearAllCreatures === 'function') clearAllCreatures();
-    if (typeof shuffleCreaturePool === 'function') shuffleCreaturePool();
-    // Update counter (should be 0 for new day)
-    if (typeof updateCounts === 'function') updateCounts();
+    // Each side effect guarded on its own: _lastKnownDay is already advanced,
+    // so if one of these threw, the caller would abort and NOTHING would ever
+    // detect this day change again until a manual reload.
+    try { if (typeof clearAllCreatures === 'function') clearAllCreatures(); } catch(e) { console.error('[Day] clear creatures', e); }
+    try { if (typeof shuffleCreaturePool === 'function') shuffleCreaturePool(); } catch(e) { console.error('[Day] shuffle pool', e); }
+    try { if (typeof updateCounts === 'function') updateCounts(); } catch(e) { console.error('[Day] counts', e); }
     // Reset the Due Today popup so it can show again
     try { localStorage.removeItem('tinyape-due-today-shown'); } catch(e) {}
     return true;
   }
   return false;
+}
+
+// New-day UI from LOCAL data, before (and independent of) any network call.
+// Recurring respawns and due dates are already in the store, so the Due Today
+// popup does not need a DB round trip. Previously it waited behind
+// refreshFromSupabase, and a request on a connection that went stale overnight
+// (Mac asleep, Chrome-frozen tab) can hang for minutes, so the popup only
+// appeared after a manual reload.
+function _showNewDay() {
+  try { setDate(); render(); renderHallOfFame(); } catch(e) { console.error('[Day] render', e); }
+  try { if (typeof checkDueTodayPopup === 'function') checkDueTodayPopup(); } catch(e) { console.error('[Day] popup', e); }
+}
+// A refresh that can't answer within `ms` is treated as "no change" so the
+// caller moves on. The request itself keeps running and still applies its
+// result if it eventually lands.
+function _refreshWithTimeout(force, ms) {
+  return Promise.race([
+    refreshFromSupabase(force),
+    new Promise(r => setTimeout(() => { console.warn('[Sync] refresh slower than', ms, 'ms — not waiting on it'); r(false); }, ms))
+  ]);
 }
 
 // ─── SYNC FAILURE INDICATOR ───
@@ -1412,14 +1434,18 @@ document.addEventListener('visibilitychange', async () => {
 
     // Pull a refresh if we might have missed something (realtime down / long
     // background) or the day rolled over.
+    // New day: show it immediately from local data, don't wait on the network.
+    if (dayChanged) _showNewDay();
+
     let changed = false;
     if (maybeStale || dayChanged) {
-      changed = await refreshFromSupabase(true);
+      changed = await _refreshWithTimeout(true, 10000);
     }
     setDate();
     if (changed || dayChanged) {
       render(); renderHallOfFame();
-      // If day changed, check for new due-today items
+      // Re-check with fresh data. Once-per-day guarded, so this only shows the
+      // popup if the local pass above found nothing due.
       if (dayChanged && typeof checkDueTodayPopup === 'function') {
         checkDueTodayPopup();
       }
@@ -1463,6 +1489,7 @@ function startPeriodicSync() {
 
     // Cheap, local — always run.
     const dayChanged = checkDayChanged();
+    if (dayChanged) _showNewDay();
 
     _pollCount++;
     const deepCheck = !_realtimeConnected || (_pollCount % 10 === 0);
@@ -1474,7 +1501,7 @@ function startPeriodicSync() {
       if (window._flushSyncQueue) {
         try { await window._flushSyncQueue(); } catch(e) {}
       }
-      changed = await refreshFromSupabase();
+      changed = await _refreshWithTimeout(false, 10000);
     }
 
     if (changed || dayChanged) {
